@@ -73,6 +73,8 @@ stepwong-web/
 | `main` | **新版** — Cloudflare Workers + GitHub Pages 在线版 |
 | `flask` | **旧版** — Python Flask 本地运行版（`git switch flask`） |
 
+## 开发
+
 ### 前端
 
 直接修改 `index.html` / `static/css/style.css` / `static/js/app.js` 即可，浏览器刷新即时生效。
