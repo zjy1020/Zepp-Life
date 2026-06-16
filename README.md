@@ -63,7 +63,6 @@ stepwong-web/
 │       ├── Y.png           # 应用图标
 │       ├── bg.png          # 背景壁纸
 │       └── github-fill.png # GitHub 跳转图标
-└── archive/                # 旧版 Flask 源码（移至 flask 分支）
 ```
 
 ## 分支
