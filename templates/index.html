@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}步数更新{% endblock %}
+
+{% block content %}
+
+<!-- 状态栏 -->
+<div class="status-bar pixel-border animate-in delay-1">
+  <span class="status-badge">API v1.0</span>
+  <span class="status-online">
+    <span class="status-dot active"></span>
+    ONLINE
+  </span>
+  <span style="font-family:'Courier New',monospace;font-size:13px;color:var(--text-muted);">⚙</span>
+</div>
+
+<!-- 标题 -->
+<div class="site-title animate-in delay-2">
+  <h1>步 数 更 新</h1>
+  <p class="subtitle">▸ 一键同步运动步数 ◂</p>
+</div>
+
+<!-- Tab 导航 -->
+<nav class="tab-nav animate-in delay-3">
+  <button class="tab-btn active" data-tab="update">█ 步数更新 █</button>
+  <button class="tab-btn" data-tab="accounts">█ 账号管理 █</button>
+  <button class="tab-btn" data-tab="logs">█ 执行日志 █</button>
+</nav>
+
+<!-- ====== Tab: 步数更新 ====== -->
+<div class="tab-content active" id="tab-update">
+  <div class="card pixel-border animate-in delay-4">
+    <div class="card-body">
+      <form id="stepForm">
+        <div class="form-group">
+          <label class="form-label">▼ 选择账号</label>
+          <select class="pixel-select" id="accountSelect" required>
+            <option value="" disabled selected>— 请选择账号 —</option>
+            {% for acct in accounts %}
+            <option value="{{ loop.index0 }}">{{ acct.name }}</option>
+            {% endfor %}
+            {% if not accounts %}
+            <option value="" disabled>暂无账号，请先添加</option>
+            {% endif %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">▼ 步数设置</label>
+          <div class="btn-row">
+            <button type="button" class="btn-preset" data-step="10000">10K</button>
+            <button type="button" class="btn-preset" data-step="20000">20K</button>
+            <button type="button" class="btn-preset" data-step="30000">30K</button>
+            <button type="button" class="btn-preset" data-step="50000">50K</button>
+            <button type="button" class="btn-preset" data-step="random">⋮ 随机</button>
+          </div>
+          <div class="step-display">
+            <span class="number" id="stepValue">25,000</span>
+            <span class="unit">步</span>
+            <span class="hint">▸ 点击预设按钮或拖动滑块 ◂</span>
+          </div>
+          <input type="range" id="stepSlider" min="1" max="98800" value="25000">
+          <div class="slider-labels">
+            <span>1</span>
+            <span>50,000</span>
+            <span>98,800</span>
+          </div>
+        </div>
+        <div id="resultBanner" class="result-banner" style="display:none;">
+          <div class="result-icon" id="resultIcon">✔</div>
+          <div class="result-msg" id="resultMsg">修改成功！</div>
+          <button type="button" class="result-close" onclick="hideResult()">✕</button>
+        </div>
+        <button type="submit" class="btn-primary">[ 动 动 吧 ]</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Tab: 账号管理 ====== -->
+<div class="tab-content" id="tab-accounts">
+  <div class="card pixel-border animate-in delay-4">
+    <div class="card-body">
+      <div class="form-group">
+        <label class="form-label">▼ 添加账号</label>
+        <div class="add-account-form">
+          <input type="text" class="pixel-input" id="newUser" placeholder="手机号 / 邮箱">
+          <input type="password" class="pixel-input" id="newPass" placeholder="密码">
+          <button type="button" class="btn-add" id="addAccountBtn">+ 添加</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">▼ 已保存账号</label>
+        <div id="accountList">
+          {% if accounts %}
+            {% for acct in accounts %}
+            <div class="account-item" data-index="{{ loop.index0 }}">
+              <div class="info">
+                <span class="name">{{ acct.name }}</span>
+                {% if acct.is_active %}<span style="color:var(--accent-cyan);font-size:10px;margin-left:8px;">● 当前</span>{% endif %}
+              </div>
+              <div class="actions">
+                <button type="button" class="btn-sm" onclick="useAccount({{ loop.index0 }})">使用</button>
+                <button type="button" class="btn-sm" onclick="deleteAccount({{ loop.index0 }})">删除</button>
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <p style="color:var(--text-muted);font-size:13px;text-align:center;padding:24px 0;">
+              ＞ 还没有账号，快添加一个吧
+            </p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Tab: 执行日志 ====== -->
+<div class="tab-content" id="tab-logs">
+  <div class="card pixel-border animate-in delay-4">
+    <div class="card-body">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <label class="form-label" style="margin-bottom:0;">▼ 执行日志</label>
+        <button type="button" class="btn-sm" id="clearLogBtn">清空</button>
+      </div>
+      <div class="log-panel" style="min-height:240px;">
+        <div class="log-content" id="logContent">
+          <span class="log-prompt">></span> <span class="log-line">系统就绪，等待执行...</span><br>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 底部 -->
+<footer class="footer animate-in delay-6">
+  <p>STEPWONG WEB · 本地刷步工具</p>
+</footer>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>window.__INITIAL_ACCOUNTS = {{ accounts | tojson | safe }};</script>
+{% endblock %}
