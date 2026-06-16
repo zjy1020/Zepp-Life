@@ -376,8 +376,11 @@ function renderAccountList() {
   list.innerHTML = accounts.map((acct, i) => `
     <div class="account-item" data-index="${i}">
       <div class="info">
-        <span class="name">${acct.name}</span>
-        ${acct.is_active ? '<span class="active-badge">当前</span>' : ''}
+        <div>
+          <span class="name">${acct.name}</span>
+          ${acct.is_active ? '<span class="active-badge">当前</span>' : ''}
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${acct.user}</div>
+        </div>
       </div>
       <div class="actions">
         <button class="btn-sm" onclick="useAccount(${i})">使用</button>
@@ -395,7 +398,7 @@ function updateAccountSelect() {
   accounts.forEach((acct, i) => {
     const opt = document.createElement('option');
     opt.value = i;
-    opt.textContent = acct.name;
+    opt.textContent = acct.name + ' (' + acct.user + ')';
     if (acct.is_active) opt.selected = true;
     select.appendChild(opt);
   });
