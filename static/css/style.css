@@ -69,9 +69,30 @@ body {
   min-height: 100dvh;
   overflow-x: hidden;
   transition: background 0.3s, color 0.3s;
+  background-image: url('../images/【哲风壁纸】人物-休闲-壁纸.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+/* 背景半透明遮罩 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(236, 253, 245, 0.7);
+  backdrop-filter: blur(2px);
+  z-index: 0;
+  transition: background 0.3s;
+}
+
+[data-theme="dark"] body::before {
+  background: rgba(15, 23, 42, 0.78);
 }
 
 #app {
+  position: relative;
+  z-index: 1;
   max-width: 480px;
   margin: 0 auto;
   padding: 0 16px 80px;
