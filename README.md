@@ -63,10 +63,15 @@ stepwong-web/
 │       ├── Y.png           # 应用图标
 │       ├── bg.png          # 背景壁纸
 │       └── github-fill.png # GitHub 跳转图标
-└── archive/                # 旧版 Flask 源码（留档）
+└── archive/                # 旧版 Flask 源码（移至 flask 分支）
 ```
 
-## 开发
+## 分支
+
+| 分支 | 说明 |
+|------|------|
+| `main` | **新版** — Cloudflare Workers + GitHub Pages 在线版 |
+| `flask` | **旧版** — Python Flask 本地运行版（`git switch flask`） |
 
 ### 前端
 
@@ -82,7 +87,7 @@ npx wrangler deploy worker/index.js
 
 ## 历史
 
-本项目的 v1 版本为本地 Python Flask 应用（见 `archive/` 目录），v2 迁移至 Serverless 架构实现全在线使用。
+本项目的 v1 版本为本地 Python Flask 应用（见 `flask` 分支），v2 迁移至 Serverless 架构实现全在线使用。
 
 ---
 
