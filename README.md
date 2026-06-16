@@ -2,7 +2,7 @@
 
 Zepp Life（原小米运动）步数修改的在线工具。Claymorphism 卡通风格，支持多账号管理、步数预设/手动输入、一键提交。
 
-🌐 **在线使用**: https://zjy1020.github.io/Zepp-Life/
+🌐 **在线使用**: https://lby0626.github.io/Zepp-Life/
 
 > 手机电脑均可打开，无需本地运行。
 
@@ -96,4 +96,4 @@ npx wrangler deploy worker/index.js
 
 ---
 
-Made by [zjy1020](https://github.com/zjy1020)
+Made by [lby0626](https://github.com/lby0626)
