@@ -71,6 +71,10 @@ python app.py
 - 手机访问需在同一 WiFi 下，地址见控制台输出
 - 如果 pycryptodome 安装失败，AES 加密无法执行，将不能修改步数
 
+## 接口文档
+
+完整的 Zepp Life API 调用流程（AES 加密、登录、获取 token、提交步数）见 [`docs/zepp-life-api.md`](docs/zepp-life-api.md)。
+
 ---
 
 Made by [zjy1020](https://github.com/zjy1020)
