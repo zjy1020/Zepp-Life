@@ -2,5 +2,10 @@
   "appId": "com.zepplife.steps",
   "appName": "Y子步数",
   "webDir": "www",
-  "bundledWebRuntime": false
+  "bundledWebRuntime": false,
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
 }
