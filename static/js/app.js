@@ -1,4 +1,3 @@
-// StepWong Web — Claymorphism 版
 const WORKER_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? ''
   : 'https://stepwong-api.3255962845.workers.dev';
@@ -7,10 +6,9 @@ const HISTORY_KEY = 'stepwong_history';
 const THEME_KEY = 'stepwong_theme';
 
 let accounts = [];
-let history = [];
+let stepHistory = [];
 let currentStep = 1;
 
-// ====== 初始化 ======
 function init() {
   loadAccounts();
   loadHistory();
@@ -23,7 +21,6 @@ function init() {
   updateAccountSelect();
 }
 
-// ====== 账号管理（localStorage）======
 function loadAccounts() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -46,26 +43,25 @@ function desensitize(user) {
   return u.slice(0, 3) + '****' + u.slice(-4);
 }
 
-// ====== 最近记录 ======
 function loadHistory() {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
-    history = raw ? JSON.parse(raw) : [];
-  } catch(e) { history = []; }
+    stepHistory = raw ? JSON.parse(raw) : [];
+  } catch(e) { stepHistory = []; }
 }
 
 function saveHistory() {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(stepHistory));
 }
 
 function addHistory(accountName, steps, success) {
-  history.unshift({
+  stepHistory.unshift({
     account: accountName,
     steps: steps,
     time: Date.now(),
     success: !!success
   });
-  if (history.length > 10) history = history.slice(0, 10);
+  if (stepHistory.length > 10) stepHistory = stepHistory.slice(0, 10);
   saveHistory();
   renderHistory();
 }
@@ -73,11 +69,11 @@ function addHistory(accountName, steps, success) {
 function renderHistory() {
   const el = document.getElementById('historyList');
   if (!el) return;
-  if (history.length === 0) {
+  if (stepHistory.length === 0) {
     el.innerHTML = '<p class="history-empty">还没有提交记录</p>';
     return;
   }
-  el.innerHTML = history.map(h => {
+  el.innerHTML = stepHistory.map(h => {
     const date = new Date(h.time);
     const timeStr = date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     return `<div class="history-item">
@@ -88,7 +84,6 @@ function renderHistory() {
   }).join('');
 }
 
-// ====== 深色模式 ======
 function loadTheme() {
   const saved = localStorage.getItem(THEME_KEY);
   if (saved === 'dark') {
@@ -112,7 +107,6 @@ function setupThemeToggle() {
   });
 }
 
-// ====== 底部导航 ======
 function setupNav() {
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.addEventListener('click', function() {
@@ -125,14 +119,12 @@ function setupNav() {
   });
 }
 
-// ====== 步数控制 ======
 function updateStepDisplay(val) {
   currentStep = parseInt(val) || 0;
   const display = document.getElementById('stepNumber');
   if (display) display.textContent = Number(currentStep).toLocaleString();
 }
 
-// 手动输入
 function setupStepInput() {
   const display = document.getElementById('stepDisplay');
   const numberEl = document.getElementById('stepNumber');
@@ -168,13 +160,11 @@ function setupStepInput() {
     if (val > 98800) val = 98800;
     inputEl.value = val;
 
-    // 同步到 slider 和 presets
     const slider = document.getElementById('stepSlider');
     slider.value = val;
     updateStepDisplay(val);
     syncPresets(val);
 
-    // 恢复显示模式
     numberEl.classList.remove('hidden');
     inputEl.classList.add('hidden');
     hint.textContent = '👆 点击数字手动输入';
@@ -192,14 +182,12 @@ function syncPresets(val) {
   document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
 }
 
-// 滑块
 document.addEventListener('DOMContentLoaded', function() {
   const slider = document.getElementById('stepSlider');
   if (slider) {
     slider.addEventListener('input', function() {
       updateStepDisplay(parseInt(this.value) || 0);
       syncPresets(parseInt(this.value));
-      // 如果手动输入开着，关掉
       const inputEl = document.getElementById('stepInput');
       const numberEl = document.getElementById('stepNumber');
       if (!inputEl.classList.contains('hidden')) {
@@ -210,7 +198,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // 预设按钮
   document.querySelectorAll('.preset-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
@@ -218,7 +205,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
       let val = this.dataset.step;
       if (val === 'random') {
-        val = Math.floor(Math.random() * 98800) + 1;
+        const latest = stepHistory.length > 0 ? stepHistory[0].steps : null;
+        if (latest) {
+          const max = Math.min(98800, latest + 1000);
+          val = Math.floor(Math.random() * (max - latest + 1)) + latest;
+        } else {
+          val = Math.floor(Math.random() * 98800) + 1;
+        }
       } else {
         val = parseInt(val);
       }
@@ -226,7 +219,6 @@ document.addEventListener('DOMContentLoaded', function() {
       slider.value = val;
       updateStepDisplay(val);
 
-      // 关掉手动输入
       const inputEl = document.getElementById('stepInput');
       const numberEl = document.getElementById('stepNumber');
       if (!inputEl.classList.contains('hidden')) {
@@ -238,14 +230,12 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-// ====== 日志 ======
 function appendLog(type, text) {
   const log = document.getElementById('logContent');
   log.innerHTML += '<span class="log-prompt">></span> <span class="log-line ' + type + '">' + text + '</span><br>';
   log.scrollTop = log.scrollHeight;
 }
 
-// ====== 结果 ======
 function showResult(success, msg) {
   const banner = document.getElementById('resultBanner');
   const icon = document.getElementById('resultIcon');
@@ -263,11 +253,10 @@ function hideResult() {
   document.getElementById('resultBanner').classList.add('hidden');
 }
 
-// ====== 彩纸效果 ======
 function spawnConfetti() {
   const container = document.createElement('div');
   container.className = 'confetti-container';
-  const colors = ['#059669', '#ea580c', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6'];
+  const colors = ['#E11D48', '#BE123C', '#FDA4AF', '#FB7185', '#FECDD3', '#4C0519'];
   for (let i = 0; i < 40; i++) {
     const piece = document.createElement('div');
     piece.className = 'confetti-piece';
@@ -284,7 +273,6 @@ function spawnConfetti() {
   setTimeout(() => container.remove(), 3500);
 }
 
-// ====== 提交刷步 ======
 document.addEventListener('DOMContentLoaded', function() {
   const submitBtn = document.getElementById('submitBtn');
   if (!submitBtn) return;
@@ -357,7 +345,6 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-// ====== 清空日志 ======
 document.addEventListener('DOMContentLoaded', function() {
   const clearBtn = document.getElementById('clearLogBtn');
   if (clearBtn) {
@@ -367,7 +354,6 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
-// ====== 账号列表渲染 ======
 function renderAccountList() {
   const list = document.getElementById('accountList');
   if (!list) return;
@@ -409,7 +395,6 @@ function updateAccountSelect() {
   }
 }
 
-// 使用账号
 window.useAccount = function(idx) {
   accounts.forEach(a => a.is_active = false);
   accounts[idx].is_active = true;
@@ -419,7 +404,6 @@ window.useAccount = function(idx) {
   appendLog('success', '✔ 已切换至: ' + accounts[idx].name);
 };
 
-// 重命名账号
 window.renameAccount = function(idx) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -462,7 +446,6 @@ window.renameAccount = function(idx) {
   });
 };
 
-// 删除账号
 window.deleteAccount = function(idx) {
   if (!confirm('确认删除账号 ' + accounts[idx].name + ' 吗？')) return;
   accounts.splice(idx, 1);
@@ -472,7 +455,6 @@ window.deleteAccount = function(idx) {
   appendLog('success', '✔ 账号已删除');
 };
 
-// ====== 添加账号 ======
 document.addEventListener('DOMContentLoaded', function() {
   const addBtn = document.getElementById('addAccountBtn');
   if (!addBtn) return;
@@ -495,48 +477,32 @@ document.addEventListener('DOMContentLoaded', function() {
     appendLog('success', '✔ 账号已添加: ' + name);
   });
 
-  // Enter 快捷提交
   document.getElementById('newPass').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') addBtn.click();
   });
 });
 
-// ====== 启动 ======
 document.addEventListener('DOMContentLoaded', init);
 
-// ====== 教学弹窗 ======
 function simpleMarkdown(md) {
   let html = md
-    // 图片（先处理，避免被其他规则干扰）
     .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, src) => {
       const fixedSrc = src.startsWith('images/') ? 'tutorial/' + src : src;
       return `<img src="${fixedSrc}" alt="${alt}" loading="lazy">`;
     })
-    // 行内代码
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // 加粗
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    // 链接
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    // 标题
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // 分割线
     .replace(/^---$/gm, '<hr>')
-    // 引用
     .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
-    // 无序列表
     .replace(/^- (.+)$/gm, '<li>$1</li>')
-    // 代码块（``` 包裹）
     .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-    // 段落 — 空行分隔
     .replace(/\n\n+/g, '</p><p>')
-    // 列表项包裹
     .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-    // 连续引用包裹
     .replace(/(<blockquote>.*<\/blockquote>\n?)+/g, '<blockquote>$&</blockquote>')
-    // 去除多余的 blockquote 嵌套
     .replace(/<blockquote><blockquote>/g, '<blockquote>')
     .replace(/<\/blockquote><\/blockquote>/g, '</blockquote>');
 
@@ -548,7 +514,6 @@ async function openTutorial() {
   const body = document.getElementById('tutorialBody');
   overlay.classList.remove('hidden');
 
-  // 已加载过就直接显示
   if (body.dataset.loaded) return;
 
   try {

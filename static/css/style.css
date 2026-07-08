@@ -1,30 +1,24 @@
-/* ============================================
-   StepWong — Claymorphism 黏土卡通风格
-   ============================================ */
-
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=DM+Sans:wght@400;500;700&display=swap');
-
 :root {
-  --primary: #059669;
-  --primary-hover: #047857;
-  --primary-light: #d1fae5;
-  --primary-shadow: rgba(5, 150, 105, 0.25);
-  --accent: #ea580c;
-  --accent-hover: #c2410c;
-  --accent-light: #fed7aa;
-  --bg: #ecfdf5;
-  --surface: #ffffff;
-  --surface-hover: #f0fdf4;
-  --text: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
-  --border: #a7f3d0;
-  --border-dark: #059669;
-  --shadow-sm: 0 4px 6px -1px rgba(5, 150, 105, 0.08);
-  --shadow-md: 0 10px 25px -5px rgba(5, 150, 105, 0.12);
-  --shadow-lg: 0 20px 40px -8px rgba(5, 150, 105, 0.15);
-  --clay: 0 8px 0 0 rgba(5, 150, 105, 0.2);
-  --clay-pressed: 0 2px 0 0 rgba(5, 150, 105, 0.2);
+  --primary: #E11D48;
+  --primary-hover: #BE123C;
+  --primary-light: #FFF0F3;
+  --primary-shadow: rgba(225, 29, 72, 0.25);
+  --accent: #BE123C;
+  --accent-hover: #9F1239;
+  --accent-light: #FDA4AF;
+  --bg: #FFF0F3;
+  --surface: #FFFFFF;
+  --surface-hover: #FFF0F3;
+  --text: #4C0519;
+  --text-secondary: #831843;
+  --text-muted: #F9A8D4;
+  --border: #FDA4AF;
+  --border-dark: #E11D48;
+  --shadow-sm: 0 4px 6px -1px rgba(225, 29, 72, 0.08);
+  --shadow-md: 0 10px 25px -5px rgba(225, 29, 72, 0.12);
+  --shadow-lg: 0 20px 40px -8px rgba(225, 29, 72, 0.15);
+  --clay: 0 8px 0 0 rgba(225, 29, 72, 0.2);
+  --clay-pressed: 0 2px 0 0 rgba(225, 29, 72, 0.2);
   --radius-sm: 10px;
   --radius-md: 16px;
   --radius-lg: 20px;
@@ -33,26 +27,26 @@
 }
 
 [data-theme="dark"] {
-  --primary: #34d399;
-  --primary-hover: #6ee7b7;
-  --primary-light: #064e3b;
-  --primary-shadow: rgba(52, 211, 153, 0.2);
-  --accent: #fb923c;
-  --accent-hover: #fdba74;
-  --accent-light: #431407;
-  --bg: #0f172a;
-  --surface: #1e293b;
-  --surface-hover: #334155;
-  --text: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --border: #334155;
-  --border-dark: #34d399;
+  --primary: #FB7185;
+  --primary-hover: #FDA4AF;
+  --primary-light: #2d0a15;
+  --primary-shadow: rgba(251, 113, 133, 0.2);
+  --accent: #FDA4AF;
+  --accent-hover: #FECDD3;
+  --accent-light: #4C0519;
+  --bg: #1a0a0f;
+  --surface: #2d0a15;
+  --surface-hover: #3d0f1e;
+  --text: #FFF0F3;
+  --text-secondary: #FDA4AF;
+  --text-muted: #be7a8a;
+  --border: #4C0519;
+  --border-dark: #FB7185;
   --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 20px 40px -8px rgba(0, 0, 0, 0.4);
-  --clay: 0 8px 0 0 rgba(52, 211, 153, 0.15);
-  --clay-pressed: 0 2px 0 0 rgba(52, 211, 153, 0.15);
+  --clay: 0 8px 0 0 rgba(251, 113, 133, 0.15);
+  --clay-pressed: 0 2px 0 0 rgba(251, 113, 133, 0.15);
 }
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -63,7 +57,7 @@ html {
 }
 
 body {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Quicksand', sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100dvh;
@@ -75,19 +69,18 @@ body {
   background-attachment: fixed;
 }
 
-/* 背景半透明遮罩 */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background: rgba(236, 253, 245, 0.7);
+  background: rgba(255, 240, 243, 0.7);
   backdrop-filter: blur(2px);
   z-index: 0;
   transition: background 0.3s;
 }
 
 [data-theme="dark"] body::before {
-  background: rgba(15, 23, 42, 0.78);
+  background: rgba(26, 10, 15, 0.78);
 }
 
 #app {
@@ -101,7 +94,6 @@ body::before {
   flex-direction: column;
 }
 
-/* === Header === */
 .app-header {
   display: flex;
   align-items: center;
@@ -129,8 +121,8 @@ body::before {
 }
 
 .app-title {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 900;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
   font-size: 20px;
   color: var(--text);
   line-height: 1.2;
@@ -163,7 +155,6 @@ body::before {
   box-shadow: var(--clay-pressed);
 }
 
-/* === Tab Panels === */
 .tab-panel {
   display: none;
   flex: 1;
@@ -179,7 +170,6 @@ body::before {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* === Step Number Card === */
 .step-display-card {
   background: var(--surface);
   border: 3px solid var(--border);
@@ -199,8 +189,8 @@ body::before {
 }
 
 .step-display-card .step-number {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 900;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
   font-size: 56px;
   color: var(--primary);
   line-height: 1;
@@ -209,8 +199,8 @@ body::before {
 }
 
 .step-display-card .step-unit {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 18px;
   color: var(--text-muted);
   margin-left: 4px;
@@ -218,8 +208,8 @@ body::before {
 
 .step-input {
   width: 100%;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 900;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
   font-size: 48px;
   color: var(--primary);
   text-align: center;
@@ -246,7 +236,6 @@ body::before {
   margin-bottom: 16px;
 }
 
-/* === Preset Row === */
 .preset-row {
   display: flex;
   gap: 8px;
@@ -258,8 +247,8 @@ body::before {
   flex: 1;
   min-width: 0;
   padding: 12px 8px;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 13px;
   border: 3px solid var(--border);
   border-radius: var(--radius-full);
@@ -285,14 +274,13 @@ body::before {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
-  box-shadow: 0 8px 0 0 rgba(5, 150, 105, 0.3);
+  box-shadow: 0 8px 0 0 rgba(225, 29, 72, 0.3);
 }
 
 .preset-btn.active:active {
-  box-shadow: 0 2px 0 0 rgba(5, 150, 105, 0.3);
+  box-shadow: 0 2px 0 0 rgba(225, 29, 72, 0.3);
 }
 
-/* === Slider === */
 .slider-container {
   margin-bottom: 20px;
   padding: 12px 4px;
@@ -317,7 +305,7 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--primary);
   border-radius: 50%;
   border: 3px solid var(--surface);
-  box-shadow: 0 3px 8px rgba(5, 150, 105, 0.3);
+  box-shadow: 0 3px 8px rgba(225, 29, 72, 0.3);
   cursor: pointer;
   transition: transform 0.12s;
 }
@@ -332,7 +320,7 @@ input[type="range"]::-moz-range-thumb {
   background: var(--primary);
   border-radius: 50%;
   border: 3px solid var(--surface);
-  box-shadow: 0 3px 8px rgba(5, 150, 105, 0.3);
+  box-shadow: 0 3px 8px rgba(225, 29, 72, 0.3);
   cursor: pointer;
 }
 
@@ -345,15 +333,14 @@ input[type="range"]::-moz-range-thumb {
   padding: 0 2px;
 }
 
-/* === Form Elements === */
 .form-group {
   margin-bottom: 18px;
 }
 
 .form-label {
   display: block;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 13px;
   color: var(--text-secondary);
   margin-bottom: 8px;
@@ -362,7 +349,7 @@ input[type="range"]::-moz-range-thumb {
 .rounded-select {
   width: 100%;
   padding: 16px 18px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Quicksand', sans-serif;
   font-size: 15px;
   border: 3px solid var(--border);
   border-radius: var(--radius-md);
@@ -371,7 +358,7 @@ input[type="range"]::-moz-range-thumb {
   outline: none;
   cursor: pointer;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='10' viewBox='0 0 16 10'%3E%3Cpath d='M2 2l6 6 6-6' stroke='%23059669' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='10' viewBox='0 0 16 10'%3E%3Cpath d='M2 2l6 6 6-6' stroke='%23E11D48' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 16px center;
   transition: border-color 0.15s;
@@ -387,7 +374,6 @@ input[type="range"]::-moz-range-thumb {
   background: var(--surface);
 }
 
-/* === Result Banner === */
 .result-banner {
   display: flex;
   align-items: center;
@@ -430,8 +416,8 @@ input[type="range"]::-moz-range-thumb {
 
 .result-msg {
   flex: 1;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 14px;
   color: var(--text);
 }
@@ -460,12 +446,11 @@ input[type="range"]::-moz-range-thumb {
   to { transform: scale(1); opacity: 1; }
 }
 
-/* === Submit Button === */
 .submit-btn {
   width: 100%;
   padding: 18px 24px;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 800;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
   font-size: 18px;
   border: 3px solid var(--accent);
   border-radius: var(--radius-xl);
@@ -473,7 +458,7 @@ input[type="range"]::-moz-range-thumb {
   color: white;
   cursor: pointer;
   transition: all 0.12s;
-  box-shadow: 0 8px 0 0 rgba(234, 88, 12, 0.3), var(--shadow-md);
+  box-shadow: 0 8px 0 0 rgba(190, 18, 60, 0.3), var(--shadow-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -483,14 +468,14 @@ input[type="range"]::-moz-range-thumb {
 
 .submit-btn:active {
   transform: translateY(6px);
-  box-shadow: 0 2px 0 0 rgba(234, 88, 12, 0.3), var(--shadow-sm);
+  box-shadow: 0 2px 0 0 rgba(190, 18, 60, 0.3), var(--shadow-sm);
 }
 
 .submit-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: translateY(4px);
-  box-shadow: 0 4px 0 0 rgba(234, 88, 12, 0.2);
+  box-shadow: 0 4px 0 0 rgba(190, 18, 60, 0.2);
 }
 
 .submit-btn .btn-icon {
@@ -502,7 +487,6 @@ input[type="range"]::-moz-range-thumb {
   transform: translateX(4px);
 }
 
-/* === Recent History === */
 .history-section {
   margin-top: 4px;
 }
@@ -515,8 +499,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .history-title {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 14px;
   color: var(--text-secondary);
 }
@@ -536,12 +520,12 @@ input[type="range"]::-moz-range-thumb {
   border: 2.5px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 13px;
-  box-shadow: 0 3px 0 0 rgba(5, 150, 105, 0.12);
+  box-shadow: 0 3px 0 0 rgba(225, 29, 72, 0.12);
 }
 
 .history-item .h-step {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 800;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
   color: var(--primary);
 }
 
@@ -561,11 +545,10 @@ input[type="range"]::-moz-range-thumb {
   font-size: 13px;
 }
 
-/* === Accounts Tab === */
 .add-account-hint {
-  font-family: 'Nunito', sans-serif;
+  font-family: 'Fredoka', sans-serif;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-muted);
   text-align: center;
   padding-bottom: 4px;
@@ -586,7 +569,7 @@ input[type="range"]::-moz-range-thumb {
 .add-account-card input {
   width: 100%;
   padding: 14px 16px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Quicksand', sans-serif;
   font-size: 14px;
   border: 3px solid var(--border);
   border-radius: var(--radius-sm);
@@ -606,8 +589,8 @@ input[type="range"]::-moz-range-thumb {
 
 .add-account-card button {
   padding: 14px;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 15px;
   border: 3px solid var(--primary);
   border-radius: var(--radius-md);
@@ -624,8 +607,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .section-title {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 15px;
   color: var(--text-secondary);
   margin-bottom: 12px;
@@ -657,8 +640,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .account-item .name {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 14px;
   color: var(--text);
 }
@@ -680,8 +663,8 @@ input[type="range"]::-moz-range-thumb {
 
 .btn-sm {
   padding: 8px 14px;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 11px;
   border: 2.5px solid var(--border);
   border-radius: var(--radius-sm);
@@ -689,12 +672,12 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.12s;
-  box-shadow: 0 4px 0 0 rgba(5, 150, 105, 0.12);
+  box-shadow: 0 4px 0 0 rgba(225, 29, 72, 0.12);
 }
 
 .btn-sm:active {
   transform: translateY(2px);
-  box-shadow: 0 2px 0 0 rgba(5, 150, 105, 0.12);
+  box-shadow: 0 2px 0 0 rgba(225, 29, 72, 0.12);
 }
 
 .btn-sm:hover {
@@ -706,7 +689,7 @@ input[type="range"]::-moz-range-thumb {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
-  box-shadow: 0 4px 0 0 rgba(5, 150, 105, 0.25);
+  box-shadow: 0 4px 0 0 rgba(225, 29, 72, 0.25);
 }
 
 .btn-sm.danger {
@@ -720,7 +703,6 @@ input[type="range"]::-moz-range-thumb {
   border-color: #ef4444;
 }
 
-/* === Logs Tab === */
 .log-header {
   display: flex;
   align-items: center;
@@ -730,8 +712,8 @@ input[type="range"]::-moz-range-thumb {
 
 .clear-btn {
   padding: 8px 18px;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 12px;
   border: 2.5px solid var(--border);
   border-radius: var(--radius-full);
@@ -757,7 +739,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .log-content {
-  font-family: 'DM Sans', monospace;
+  font-family: 'Quicksand', monospace;
   font-size: 13px;
   color: var(--text-muted);
   line-height: 1.8;
@@ -790,7 +772,6 @@ input[type="range"]::-moz-range-thumb {
   border-radius: var(--radius-full);
 }
 
-/* === Bottom Nav === */
 .bottom-nav {
   position: fixed;
   bottom: 0;
@@ -802,7 +783,7 @@ input[type="range"]::-moz-range-thumb {
   gap: 4px;
   background: var(--surface);
   border-top: 3px solid var(--border);
-  box-shadow: 0 -4px 20px rgba(5, 150, 105, 0.06);
+  box-shadow: 0 -4px 20px rgba(225, 29, 72, 0.06);
   z-index: 100;
 }
 
@@ -819,8 +800,8 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
 }
 
 .nav-item:hover {
@@ -842,7 +823,6 @@ input[type="range"]::-moz-range-thumb {
   font-size: 11px;
 }
 
-/* === Toggle Switch (Custom) === */
 .toggle-row {
   display: flex;
   align-items: center;
@@ -856,17 +836,16 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .toggle-row .toggle-label {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 14px;
   color: var(--text-secondary);
 }
 
-/* === Rename Modal === */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.4);
+  background: rgba(76, 5, 25, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -887,8 +866,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .modal-card h3 {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 800;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
   font-size: 18px;
   color: var(--text);
   margin-bottom: 16px;
@@ -897,7 +876,7 @@ input[type="range"]::-moz-range-thumb {
 .modal-card input {
   width: 100%;
   padding: 14px 16px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Quicksand', sans-serif;
   font-size: 14px;
   border: 3px solid var(--border);
   border-radius: var(--radius-sm);
@@ -919,8 +898,8 @@ input[type="range"]::-moz-range-thumb {
 .modal-actions button {
   flex: 1;
   padding: 12px;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 14px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -956,7 +935,6 @@ input[type="range"]::-moz-range-thumb {
   to { opacity: 1; }
 }
 
-/* === Confetti === */
 .confetti-container {
   position: fixed;
   top: 0;
@@ -981,7 +959,6 @@ input[type="range"]::-moz-range-thumb {
   100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
 }
 
-/* === Tutorial Button === */
 .tutorial-btn {
   width: 32px;
   height: 32px;
@@ -1009,7 +986,6 @@ input[type="range"]::-moz-range-thumb {
   border-color: var(--primary);
 }
 
-/* === Tutorial Modal === */
 .tutorial-modal {
   background: var(--surface);
   border: 3px solid var(--border);
@@ -1034,8 +1010,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .tutorial-header h2 {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 800;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
   font-size: 18px;
   color: var(--text);
 }
@@ -1070,15 +1046,15 @@ input[type="range"]::-moz-range-thumb {
 
 .tutorial-body h1 { display: none; }
 .tutorial-body h2 {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 800;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
   font-size: 18px;
   color: var(--text);
   margin: 20px 0 10px;
 }
 .tutorial-body h3 {
-  font-family: 'Nunito', sans-serif;
-  font-weight: 700;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
   font-size: 15px;
   color: var(--text);
   margin: 16px 0 8px;
@@ -1166,10 +1142,8 @@ input[type="range"]::-moz-range-thumb {
   border-radius: var(--radius-full);
 }
 
-/* === Hidden Utility === */
 .hidden { display: none !important; }
 
-/* === Responsive === */
 @media (max-width: 400px) {
   #app { padding-left: 12px; padding-right: 12px; }
   .step-display-card .step-number { font-size: 44px; }
