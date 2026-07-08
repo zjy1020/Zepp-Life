@@ -37,7 +37,57 @@ jobs:
         run: npx cap add android
 
       - name: Generate app icons
-        run: npx capacitor-assets generate --iconBackgroundColor "#E11D48"
+        run: |
+          # 1. Create base 1024x1024 icon (red bg + Y centered)
+          convert -size 1024x1024 xc:'#E11D48' \
+            \( icon.png -resize 560x560 \) \
+            -gravity center -composite android-icon.png
+
+          # 2. Generate mipmap densities
+          for pair in "mdpi:48" "hdpi:72" "xhdpi:96" "xxhdpi:144" "xxxhdpi:192"; do
+            res="${pair%%:*}"
+            size="${pair##*:}"
+            mkdir -p "android/app/src/main/res/mipmap-${res}"
+            convert android-icon.png -resize ${size}x${size} \
+              "android/app/src/main/res/mipmap-${res}/ic_launcher.png"
+            # Same for round icon
+            cp "android/app/src/main/res/mipmap-${res}/ic_launcher.png" \
+               "android/app/src/main/res/mipmap-${res}/ic_launcher_round.png"
+          done
+
+          # 3. Adaptive icon foreground (on transparent bg, with safe-zone padding)
+          convert -size 1024x1024 xc:transparent \
+            \( icon.png -resize 480x480 \) \
+            -gravity center -composite android-fg.png
+          for pair in "mdpi:48" "hdpi:72" "xhdpi:96" "xxhdpi:144" "xxxhdpi:192"; do
+            res="${pair%%:*}"
+            size="${pair##*:}"
+            convert android-fg.png -resize ${size}x${size} \
+              "android/app/src/main/res/mipmap-${res}/ic_launcher_foreground.png"
+          done
+
+          # 4. Adaptive icon background color drawable
+          mkdir -p android/app/src/main/res/drawable
+          cat > android/app/src/main/res/drawable/ic_launcher_background.xml << 'XMLEOF'
+            <?xml version="1.0" encoding="utf-8"?>
+            <shape xmlns:android="http://schemas.android.com/apk/res/android">
+                <solid android:color="#E11D48"/>
+            </shape>
+          XMLEOF
+
+          # 5. Adaptive icon XML definition
+          mkdir -p android/app/src/main/res/mipmap-anydpi-v26
+          cat > android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'XMLEOF'
+            <?xml version="1.0" encoding="utf-8"?>
+            <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+                <background android:drawable="@drawable/ic_launcher_background"/>
+                <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+            </adaptive-icon>
+          XMLEOF
+
+          # 6. Same adaptive icon for round variant
+          cp android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml \
+             android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 
       - name: Copy icon to web assets
         run: cp icon.png www/

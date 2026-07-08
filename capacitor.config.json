@@ -2,8 +2,5 @@
   "appId": "com.zepplife.steps",
   "appName": "Y子步数",
   "webDir": "www",
-  "bundledWebRuntime": false,
-  "server": {
-    "androidScheme": "https"
-  }
+  "bundledWebRuntime": false
 }
