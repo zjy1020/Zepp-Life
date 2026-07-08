@@ -8,10 +8,10 @@
     "build:apk": "cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
-    "@capacitor/android": "^7.0.0",
-    "@capacitor/core": "^7.0.0"
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/core": "^8.3.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^7.0.0"
+    "@capacitor/cli": "^8.3.0"
   }
 }
