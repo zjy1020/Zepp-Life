@@ -45,20 +45,18 @@ jobs:
           mkdir -p android/app/src/main/java/com/zepplife/steps
           cp clash-plugin/ClashControlPlugin.java android/app/src/main/java/com/zepplife/steps/
           MAIN="android/app/src/main/java/com/zepplife/steps/MainActivity.java"
-          cat > "$MAIN" << 'JAVAEOF'
-package com.zepplife.steps;
-
-import android.os.Bundle;
-import com.getcapacitor.BridgeActivity;
-
-public class MainActivity extends BridgeActivity {
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        registerPlugin(ClashControlPlugin.class);
-    }
-}
-JAVAEOF
+          echo 'package com.zepplife.steps;' > "$MAIN"
+          echo '' >> "$MAIN"
+          echo 'import android.os.Bundle;' >> "$MAIN"
+          echo 'import com.getcapacitor.BridgeActivity;' >> "$MAIN"
+          echo '' >> "$MAIN"
+          echo 'public class MainActivity extends BridgeActivity {' >> "$MAIN"
+          echo '    @Override' >> "$MAIN"
+          echo '    public void onCreate(Bundle savedInstanceState) {' >> "$MAIN"
+          echo '        super.onCreate(savedInstanceState);' >> "$MAIN"
+          echo '        registerPlugin(ClashControlPlugin.class);' >> "$MAIN"
+          echo '    }' >> "$MAIN"
+          echo '}' >> "$MAIN"
 
       - name: Generate app icons
         run: |
