@@ -1,6 +1,10 @@
 package com.zepplife.steps;
 
+import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.VpnService;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -41,14 +45,21 @@ public class ClashControlPlugin extends Plugin {
         try {
             log.put("step1", "正在调用 VpnService.prepare()...");
             Intent vpnIntent = VpnService.prepare(getContext());
+            log.put("intent", vpnIntent != null ? vpnIntent.toString() : "null");
             if (vpnIntent != null) {
-                log.put("step2", "返回 VPN Intent，正在弹出系统确认框...");
-                log.put("hint", "请在系统弹窗中点击「确定」断开 Clash VPN");
+                log.put("step2", "VpnService.prepare() 返回了 Intent");
+                log.put("step3", "正在添加 FLAG_ACTIVITY_NEW_TASK...");
+                vpnIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                log.put("step4", "正在调用 startActivity(vpnIntent)...");
                 getActivity().startActivity(vpnIntent);
+                log.put("step5", "startActivity 执行完毕（未抛异常）");
+                log.put("hint", "系统应弹出了 VPN 授权对话框，点击「确定」即可断开 Clash");
                 log.put("success", true);
                 call.resolve(log);
             } else {
-                log.put("step2", "VpnService.prepare() 返回 null（已无 VPN 连接）");
+                log.put("step2", "VpnService.prepare() 返回 null，可能原因：");
+                log.put("hint2a", " - 当前没有活跃的 VPN 连接");
+                log.put("hint2b", " - 我们的应用已是当前 VPN 提供者");
                 log.put("success", true);
                 call.resolve(log);
             }
