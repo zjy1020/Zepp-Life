@@ -281,6 +281,13 @@ body::before {
   box-shadow: 0 2px 0 0 rgba(225, 29, 72, 0.3);
 }
 
+.preset-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: translateY(4px);
+  box-shadow: 0 4px 0 0 rgba(225, 29, 72, 0.06);
+}
+
 .slider-container {
   margin-bottom: 20px;
   padding: 12px 4px;

@@ -361,6 +361,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const lockedStep = currentStep;
     const slider = document.getElementById('stepSlider');
     slider.disabled = true;
+    document.querySelectorAll('.preset-btn').forEach(b => b.disabled = true);
 
     const acct = accounts[idx];
     appendLog('info', '⟳ 正在提交刷步请求...');
@@ -387,6 +388,7 @@ document.addEventListener('DOMContentLoaded', function() {
         restoreSlider(lockedStep);
         this.querySelector('.btn-text').textContent = origText;
         slider.disabled = false;
+        document.querySelectorAll('.preset-btn').forEach(b => b.disabled = false);
         this.disabled = false;
         return;
       }
@@ -415,6 +417,7 @@ document.addEventListener('DOMContentLoaded', function() {
     restoreSlider(lockedStep);
     this.querySelector('.btn-text').textContent = origText;
     slider.disabled = false;
+    document.querySelectorAll('.preset-btn').forEach(b => b.disabled = false);
     this.disabled = false;
   });
 });
