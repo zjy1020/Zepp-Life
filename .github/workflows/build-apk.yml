@@ -41,9 +41,9 @@ jobs:
 
       - name: Generate app icons
         run: |
-          # 1. Create base 1024x1024 icon (red bg + Y centered)
+          # 1. Create base 1024x1024 icon (red bg + Y fills most of the icon)
           convert -size 1024x1024 xc:'#E11D48' \
-            \( icon.png -resize 560x560 \) \
+            \( icon.png -resize 900x900 \) \
             -gravity center -composite android-icon.png
 
           # 2. Generate mipmap densities
@@ -58,9 +58,9 @@ jobs:
                "android/app/src/main/res/mipmap-${res}/ic_launcher_round.png"
           done
 
-          # 3. Adaptive icon foreground (on transparent bg, with safe-zone padding)
+          # 3. Adaptive icon foreground (Y fills safe zone)
           convert -size 1024x1024 xc:transparent \
-            \( icon.png -resize 480x480 \) \
+            \( icon.png -resize 900x900 \) \
             -gravity center -composite android-fg.png
           for pair in "mdpi:48" "hdpi:72" "xhdpi:96" "xxhdpi:144" "xxxhdpi:192"; do
             res="${pair%%:*}"
