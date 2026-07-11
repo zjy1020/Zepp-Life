@@ -237,10 +237,13 @@ function syncPresets(val) {
 
 async function clashSetMode(mode) {
   try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 3000);
     const resp = await fetch('http://127.0.0.1:9090/configs', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode })
+      body: JSON.stringify({ mode }),
+      signal: ctrl.signal
     });
     return resp.ok;
   } catch(e) {
@@ -710,7 +713,9 @@ document.addEventListener('DOMContentLoaded', function() {
       dot.className = 'status-dot';
       text.textContent = '检测中...';
       try {
-        const resp = await fetch('http://127.0.0.1:9090/version');
+        const ctrl = new AbortController();
+        setTimeout(() => ctrl.abort(), 3000);
+        const resp = await fetch('http://127.0.0.1:9090/version', { signal: ctrl.signal });
         if (resp.ok) {
           dot.className = 'status-dot online';
           text.textContent = '已连接 (v' + (await resp.text()).slice(0, 10) + ')';
