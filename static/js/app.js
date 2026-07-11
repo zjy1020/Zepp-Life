@@ -69,6 +69,7 @@ function renderHistory() {
   if (!el) return;
   if (stepHistory.length === 0) {
     el.innerHTML = '<p class="history-empty">还没有提交记录</p>';
+    document.getElementById('chartContainer').classList.add('hidden');
     return;
   }
   el.innerHTML = stepHistory.map(h => {
@@ -80,6 +81,59 @@ function renderHistory() {
       <span class="h-time">${timeStr}</span>
     </div>`;
   }).join('');
+  renderChart();
+}
+
+function renderChart() {
+  const svg = document.getElementById('stepChart');
+  const container = document.getElementById('chartContainer');
+  if (!svg || !container) return;
+  if (stepHistory.length < 2) { container.classList.add('hidden'); return; }
+  container.classList.remove('hidden');
+
+  const W = 340, H = 160, PAD = { top: 18, right: 10, bottom: 28, left: 44 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  const data = stepHistory.slice(0, 10).map(h => h.steps);
+  const max = Math.max(...data, 1);
+  const niceMax = Math.ceil(max / 5000) * 5000 || 5000;
+
+  let points = '';
+  data.forEach((s, i) => {
+    const x = PAD.left + (i / (data.length - 1)) * plotW;
+    const y = PAD.top + (1 - s / niceMax) * plotH;
+    points += `${x.toFixed(1)},${y.toFixed(1)} `;
+  });
+
+  const gridLines = [0, 0.25, 0.5, 0.75, 1];
+  const gridHTML = gridLines.map(f => {
+    const y = PAD.top + f * plotH;
+    const val = Math.round(niceMax * (1 - f));
+    return `<line x1="${PAD.left}" y1="${y}" x2="${W - PAD.right}" y2="${y}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="3,3"/>
+      <text x="${PAD.left - 4}" y="${y + 3}" text-anchor="end" fill="var(--text-muted)" font-size="8">${val.toLocaleString()}</text>`;
+  }).join('');
+
+  const pointDots = data.map((s, i) => {
+    const x = PAD.left + (i / (data.length - 1)) * plotW;
+    const y = PAD.top + (1 - s / niceMax) * plotH;
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="var(--primary)" stroke="var(--surface)" stroke-width="1.5">
+      <title>${s.toLocaleString()} 步</title></circle>`;
+  }).join('');
+
+  const timeLabels = stepHistory.slice(0, 10).reverse().map((h, i) => {
+    const x = PAD.left + (i / (Math.min(data.length, 10) - 1)) * plotW;
+    const d = new Date(h.time);
+    const label = `${d.getMonth() + 1}/${d.getDate()}`;
+    return `<text x="${x.toFixed(1)}" y="${H - 4}" text-anchor="middle" fill="var(--text-muted)" font-size="7">${label}</text>`;
+  }).join('');
+
+  svg.innerHTML = gridHTML + `
+    <polyline points="${points.trim()}" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <polyline points="${points.trim()}" fill="none" stroke="var(--primary)" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" opacity="0.12"/>
+    <g>${pointDots}</g>
+    <g>${timeLabels}</g>
+  `;
 }
 
 function loadTheme() {
@@ -242,6 +296,12 @@ function appendLog(type, text) {
   log.scrollTop = log.scrollHeight;
 }
 
+function haptic(type) {
+  if (!navigator.vibrate) return;
+  if (type === 'success') navigator.vibrate(30);
+  else navigator.vibrate([60, 30, 60]);
+}
+
 function showResult(success, msg) {
   const banner = document.getElementById('resultBanner');
   const icon = document.getElementById('resultIcon');
@@ -252,6 +312,7 @@ function showResult(success, msg) {
   msgEl.textContent = msg;
   banner.classList.remove('hidden');
 
+  haptic(success ? 'success' : 'error');
   if (success) spawnConfetti();
 }
 
