@@ -1,7 +1,6 @@
 package com.zepplife.steps;
 
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.Looper;
 import com.getcapacitor.JSObject;
@@ -42,16 +41,17 @@ public class ClashControlPlugin extends Plugin {
         JSObject log = new JSObject();
         try {
             log.put("step1", "正在启动 CMFA MainActivity 用于注册广播...");
-            PackageManager pm = getContext().getPackageManager();
-            Intent warmup = pm.getLaunchIntentForPackage("com.github.metacubex.clash.meta");
-            if (warmup != null) {
-                warmup.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                warmup.setAction(Intent.ACTION_MAIN);
-                warmup.addCategory(Intent.CATEGORY_LAUNCHER);
+            Intent warmup = new Intent();
+            warmup.setClassName(
+                "com.github.metacubex.clash.meta",
+                "com.github.kr328.clash.MainActivity"
+            );
+            warmup.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            try {
                 getActivity().startActivity(warmup);
                 log.put("step2b", "CMFA MainActivity 已启动");
-            } else {
-                log.put("step2b", "getLaunchIntentForPackage 返回 null");
+            } catch (Exception e) {
+                log.put("step2b", "启动 MainActivity 失败: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             }
 
             log.put("step3", "等待 1.5s 让广播注册...");
