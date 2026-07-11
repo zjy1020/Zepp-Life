@@ -238,14 +238,11 @@ function syncPresets(val) {
 async function clashStart() {
   try {
     if (window.Capacitor?.Plugins?.ClashControl) {
-      appendLog('line', '   · 调用 ClashControl.startClash()...');
       await Capacitor.Plugins.ClashControl.startClash();
-      appendLog('line', '   · Intent 已发送');
       return true;
     }
-    appendLog('line', '   · ClashControl 插件不可用');
   } catch(e) {
-    appendLog('error', '✖ clashStart 异常: ' + (e.message || e));
+    appendLog('error', '✖ Clash 启动失败: ' + (e.message || e));
   }
   return false;
 }
@@ -253,14 +250,10 @@ async function clashStart() {
 async function clashStop() {
   try {
     if (window.Capacitor?.Plugins?.ClashControl) {
-      appendLog('line', '   · 调用 ClashControl.stopClash()...');
       await Capacitor.Plugins.ClashControl.stopClash();
-      appendLog('line', '   · Intent 已发送');
       return true;
     }
-  } catch(e) {
-    appendLog('error', '✖ clashStop 异常: ' + (e.message || e));
-  }
+  } catch(e) {}
   return false;
 }
 
