@@ -1237,6 +1237,17 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 2px 0 0 rgba(225, 29, 72, 0.25);
 }
 
+.btn-settings.danger {
+  background: #dc2626;
+  color: white;
+  border-color: #dc2626;
+  box-shadow: 0 4px 0 0 rgba(220, 38, 38, 0.25);
+}
+
+.btn-settings.danger:active {
+  box-shadow: 0 2px 0 0 rgba(220, 38, 38, 0.25);
+}
+
 .clash-status {
   display: flex;
   align-items: center;
