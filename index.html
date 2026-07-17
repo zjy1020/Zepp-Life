@@ -57,8 +57,6 @@
       <div class="step-range-hint" id="stepRangeHint">当前基准 1，本次最高 1,001</div>
 
       <div class="step-tools" aria-label="步数快捷操作">
-        <button type="button" class="tool-btn" data-adjust="-1000">-1K</button>
-        <button type="button" class="tool-btn" data-adjust="1000">+1K</button>
         <button type="button" class="tool-btn tool-btn-primary" id="useLastSuccessBtn">沿用上次成功</button>
         <button type="button" class="tool-btn" id="resetStepBtn">重置为 1</button>
       </div>
@@ -89,6 +87,10 @@
         <select id="accountSelect" class="rounded-select">
           <option value="" disabled selected>— 请选择账号 —</option>
         </select>
+        <div class="account-manage-row" id="accountManageRow" aria-label="当前账号管理">
+          <button type="button" class="account-action-btn" id="renameSelectedAccountBtn" data-account-action="rename-selected" disabled>重命名当前账号</button>
+          <button type="button" class="account-action-btn danger" id="deleteSelectedAccountBtn" data-account-action="delete-selected" disabled>删除当前账号</button>
+        </div>
       </div>
 
       <div id="resultBanner" class="result-banner hidden" aria-live="polite">
@@ -172,7 +174,7 @@
     </div>
   </div>
 
-  <script src="static/js/app.js"></script>
+  <script src="static/js/app.js?v=20260717-accounts-fix"></script>
 </body>
 </html>
 

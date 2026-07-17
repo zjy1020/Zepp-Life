@@ -8,6 +8,7 @@ let stepHistory = [];
 let currentStep = 1;
 let activeTab = 'steps';
 let lastSuccessStep = null;
+let delegatedActionsReady = false;
 
 function readJSON(key, fallback) {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
@@ -325,18 +326,54 @@ function renderAccountList() {
     const successMeta = lastSuccess
       ? `<div class="account-success"><span>上次成功</span><strong>${formatStep(lastSuccess.steps)} 步</strong><small>${formatHistoryTime(lastSuccess.time)}</small></div>`
       : '<div class="account-success is-empty"><span>上次成功</span><strong>暂无</strong><small>完成一次刷步后显示</small></div>';
-    return `<div class="account-item ${acct.is_active ? 'is-active' : ''}" data-index="${index}"><div class="info"><div class="account-main"><span class="name">${escapeHtml(acct.name)}</span>${acct.is_active ? '<span class="active-badge">当前</span>' : ''}</div><div class="account-sub">${escapeHtml(desensitize(acct.user))}</div>${successMeta}</div><div class="actions"><button class="btn-sm" onclick="useAccount(${index})">使用</button><button class="btn-sm" onclick="renameAccount(${index})">重命名</button><button class="btn-sm danger" onclick="deleteAccount(${index})">删除</button></div></div>`;
+    return `<div class="account-item ${acct.is_active ? 'is-active' : ''}" data-index="${index}"><div class="info"><div class="account-main"><span class="name">${escapeHtml(acct.name)}</span>${acct.is_active ? '<span class="active-badge">当前</span>' : ''}</div><div class="account-sub">${escapeHtml(desensitize(acct.user))}</div>${successMeta}</div><div class="actions"><button type="button" class="btn-sm" data-account-action="use" data-account-index="${index}">使用</button><button type="button" class="btn-sm" data-account-action="rename" data-account-index="${index}">重命名</button><button type="button" class="btn-sm danger" data-account-action="delete" data-account-index="${index}">删除</button></div></div>`;
   }).join('');
 }
 function updateAccountSelect() {
   const select = document.getElementById('accountSelect');
   if (!select) return;
   select.innerHTML = '';
-  if (!accounts.length) { const option = document.createElement('option'); option.value = ''; option.disabled = true; option.selected = true; option.textContent = '暂无账号，请先添加'; select.appendChild(option); return; }
-  const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.disabled = true; placeholder.textContent = '— 请选择账号 —'; select.appendChild(placeholder);
+  if (!accounts.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.disabled = true;
+    option.selected = true;
+    option.textContent = '暂无账号，请先添加';
+    select.appendChild(option);
+    updateAccountManagementControls();
+    return;
+  }
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.disabled = true;
+  placeholder.textContent = '— 请选择账号 —';
+  select.appendChild(placeholder);
   const activeIndex = getActiveAccountIndex();
-  accounts.forEach((acct, index) => { const option = document.createElement('option'); option.value = String(index); option.textContent = `${acct.name} (${acct.user})`; if (index === activeIndex) option.selected = true; select.appendChild(option); });
+  accounts.forEach((acct, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = `${acct.name} (${acct.user})`;
+    if (index === activeIndex) option.selected = true;
+    select.appendChild(option);
+  });
   if (activeIndex < 0) select.value = '';
+  updateAccountManagementControls();
+}
+function getSelectedAccountIndex() {
+  const select = document.getElementById('accountSelect');
+  const index = Number.parseInt(select?.value || '', 10);
+  if (Number.isNaN(index) || index < 0 || index >= accounts.length) return -1;
+  return index;
+}
+function updateAccountManagementControls() {
+  const selectedIndex = getSelectedAccountIndex();
+  const hasAccount = selectedIndex >= 0;
+  const renameBtn = document.getElementById('renameSelectedAccountBtn');
+  const deleteBtn = document.getElementById('deleteSelectedAccountBtn');
+  const row = document.getElementById('accountManageRow');
+  if (renameBtn) renameBtn.disabled = !hasAccount;
+  if (deleteBtn) deleteBtn.disabled = !hasAccount;
+  row?.classList.toggle('is-disabled', !hasAccount);
 }
 function appendLog(type, text) {
   const log = document.getElementById('logContent');
@@ -395,7 +432,7 @@ function updateBusyState(isBusy, button) {
   const submitBtn = button || document.getElementById('submitBtn');
   const slider = document.getElementById('stepSlider');
   const select = document.getElementById('accountSelect');
-  document.querySelectorAll('.preset-btn, .tool-btn, .increment-btn').forEach((el) => { el.disabled = isBusy; });
+  document.querySelectorAll('.preset-btn, .tool-btn, .increment-btn, .account-action-btn').forEach((el) => { el.disabled = isBusy || (el.classList.contains('account-action-btn') && getSelectedAccountIndex() < 0); });
   if (submitBtn) submitBtn.disabled = isBusy;
   if (slider) slider.disabled = isBusy;
   if (select) select.disabled = isBusy;
@@ -455,7 +492,40 @@ function setupNavigation() { document.querySelectorAll('.nav-item').forEach((but
 function setupThemeToggle() { document.getElementById('themeToggle')?.addEventListener('click', toggleTheme); }
 function setupLogControls() { document.getElementById('clearLogBtn')?.addEventListener('click', clearLog); }
 function setupHistoryControls() { document.getElementById('clearHistoryBtn')?.addEventListener('click', clearHistory); }
-function setupAccountSelectBinding() { document.getElementById('accountSelect')?.addEventListener('change', function () { const index = Number.parseInt(this.value, 10); if (!Number.isNaN(index)) setActiveAccount(index, { silent: true }); }); }
+function setupAccountSelectBinding() {
+  document.getElementById('accountSelect')?.addEventListener('change', function () {
+    const index = Number.parseInt(this.value, 10);
+    if (!Number.isNaN(index)) setActiveAccount(index, { silent: true });
+    updateAccountManagementControls();
+  });
+}
+function setupAccountManagementControls() {
+  updateAccountManagementControls();
+}
+function setupDelegatedActions() {
+  if (delegatedActionsReady) return;
+  delegatedActionsReady = true;
+  document.addEventListener('click', (event) => {
+    const navButton = event.target.closest?.('.nav-item[data-tab]');
+    if (navButton) {
+      event.preventDefault();
+      setActiveTab(navButton.dataset.tab || 'steps');
+      return;
+    }
+
+    const accountButton = event.target.closest?.('[data-account-action]');
+    if (!accountButton || accountButton.disabled) return;
+    const action = accountButton.dataset.accountAction;
+    const explicitIndex = Number.parseInt(accountButton.dataset.accountIndex || '', 10);
+    const index = Number.isNaN(explicitIndex) ? getSelectedAccountIndex() : explicitIndex;
+    if (index < 0 || index >= accounts.length) return;
+
+    event.preventDefault();
+    if (action === 'use') setActiveAccount(index, { silent: false });
+    if (action === 'rename' || action === 'rename-selected') renameAccount(index);
+    if (action === 'delete' || action === 'delete-selected') deleteAccount(index);
+  });
+}
 function upsertAccount(user, password) {
   const normalizedUser = String(user).trim();
   const normalizedPassword = String(password).trim();
@@ -666,6 +736,7 @@ function init() {
   setupLogControls();
   setupHistoryControls();
   setupAccountSelectBinding();
+  setupAccountManagementControls();
   setupAddAccountForm();
   setupSubmitButton();
   setupTutorial();
@@ -674,6 +745,7 @@ window.useAccount = function useAccount(index) { setActiveAccount(index, { silen
 window.renameAccount = function renameAccountGlobal(index) { renameAccount(index); };
 window.deleteAccount = function deleteAccountGlobal(index) { deleteAccount(index); };
 window.hideResult = hideResult;
+setupDelegatedActions();
 document.addEventListener('DOMContentLoaded', init);
 
 

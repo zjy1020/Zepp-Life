@@ -457,6 +457,42 @@ input[type="range"]::-moz-range-thumb {
   background-position: right 17px center;
 }
 
+.account-manage-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.account-action-btn {
+  min-height: 42px;
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--primary-strong);
+  font-family: 'Fredoka', 'Microsoft YaHei', sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+}
+
+.account-action-btn.danger {
+  border-color: #fca5a5;
+  color: var(--danger);
+}
+
+.account-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  box-shadow: none;
+}
+
+.account-action-btn:not(:disabled):active {
+  transform: translateY(1px) scale(0.99);
+}
+
 .result-banner {
   display: flex;
   align-items: center;
