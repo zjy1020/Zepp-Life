@@ -4,6 +4,7 @@
   "description": "Y子步数 - Zepp Life 步数修改工具",
   "private": true,
   "scripts": {
+    "test": "node --test",
     "build": "npx cap sync",
     "build:apk": "cd android && ./gradlew assembleDebug"
   },

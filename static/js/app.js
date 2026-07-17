@@ -179,9 +179,9 @@ function syncPresets(value) {
   });
 }
 function setStep(value, options = {}) {
-  const { persist = true } = options;
+  const { persist = true, max = getDynamicStepMax() } = options;
   updateSliderRange();
-  currentStep = clampStep(value, getDynamicStepMax());
+  currentStep = clampStep(value, max);
   const stepNumber = document.getElementById('stepNumber');
   const stepSlider = document.getElementById('stepSlider');
   const stepInput = document.getElementById('stepInput');
@@ -475,7 +475,7 @@ function setupStepInput() {
     if (event.key === 'Enter') { event.preventDefault(); commit(); }
     if (event.key === 'Escape') { event.preventDefault(); input.value = String(currentStep); clearManualStepInput(); }
   });
-  function commit() { setStep(input.value); clearManualStepInput(); }
+  function commit() { setStep(input.value, { max: STEP_LIMITS.max }); clearManualStepInput(); }
 }
 function setupQuickStepButtons() {
   document.querySelectorAll('[data-adjust]').forEach((button) => button.addEventListener('click', () => { setStep(currentStep + Number.parseInt(button.dataset.adjust || '0', 10)); clearManualStepInput(); }));
