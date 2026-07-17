@@ -326,7 +326,7 @@ function renderAccountList() {
     const successMeta = lastSuccess
       ? `<div class="account-success"><span>上次成功</span><strong>${formatStep(lastSuccess.steps)} 步</strong><small>${formatHistoryTime(lastSuccess.time)}</small></div>`
       : '<div class="account-success is-empty"><span>上次成功</span><strong>暂无</strong><small>完成一次刷步后显示</small></div>';
-    return `<div class="account-item ${acct.is_active ? 'is-active' : ''}" data-index="${index}"><div class="info"><div class="account-main"><span class="name">${escapeHtml(acct.name)}</span>${acct.is_active ? '<span class="active-badge">当前</span>' : ''}</div><div class="account-sub">${escapeHtml(desensitize(acct.user))}</div>${successMeta}</div><div class="actions"><button type="button" class="btn-sm" data-account-action="use" data-account-index="${index}">使用</button><button type="button" class="btn-sm" data-account-action="rename" data-account-index="${index}">重命名</button><button type="button" class="btn-sm danger" data-account-action="delete" data-account-index="${index}">删除</button></div></div>`;
+    return `<div class="account-item ${acct.is_active ? 'is-active' : ''}" data-index="${index}"><div class="info"><div class="account-main"><span class="name">${escapeHtml(acct.name)}</span>${acct.is_active ? '<span class="active-badge">当前</span>' : ''}</div><div class="account-sub">${escapeHtml(desensitize(acct.user))}</div>${successMeta}</div><div class="actions"><button type="button" class="btn-sm" data-account-action="use" data-account-index="${index}" onclick="event.stopPropagation(); useAccount(${index})">使用</button><button type="button" class="btn-sm" data-account-action="rename" data-account-index="${index}" onclick="event.stopPropagation(); renameAccount(${index})">重命名</button><button type="button" class="btn-sm danger" data-account-action="delete" data-account-index="${index}" onclick="event.stopPropagation(); deleteAccount(${index})">删除</button></div></div>`;
   }).join('');
 }
 function updateAccountSelect() {
@@ -742,8 +742,17 @@ function init() {
   setupTutorial();
 }
 window.useAccount = function useAccount(index) { setActiveAccount(index, { silent: false }); };
-window.renameAccount = function renameAccountGlobal(index) { renameAccount(index); };
-window.deleteAccount = function deleteAccountGlobal(index) { deleteAccount(index); };
+window.renameAccount = renameAccount;
+window.deleteAccount = deleteAccount;
+window.setActiveTab = setActiveTab;
+window.renameSelectedAccount = function renameSelectedAccount() {
+  const index = getSelectedAccountIndex();
+  if (index >= 0) renameAccount(index);
+};
+window.deleteSelectedAccount = function deleteSelectedAccount() {
+  const index = getSelectedAccountIndex();
+  if (index >= 0) deleteAccount(index);
+};
 window.hideResult = hideResult;
 setupDelegatedActions();
 document.addEventListener('DOMContentLoaded', init);

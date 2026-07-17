@@ -88,8 +88,8 @@
           <option value="" disabled selected>— 请选择账号 —</option>
         </select>
         <div class="account-manage-row" id="accountManageRow" aria-label="当前账号管理">
-          <button type="button" class="account-action-btn" id="renameSelectedAccountBtn" data-account-action="rename-selected" disabled>重命名当前账号</button>
-          <button type="button" class="account-action-btn danger" id="deleteSelectedAccountBtn" data-account-action="delete-selected" disabled>删除当前账号</button>
+          <button type="button" class="account-action-btn" id="renameSelectedAccountBtn" data-account-action="rename-selected" onclick="event.stopPropagation(); renameSelectedAccount()" disabled>重命名当前账号</button>
+          <button type="button" class="account-action-btn danger" id="deleteSelectedAccountBtn" data-account-action="delete-selected" onclick="event.stopPropagation(); deleteSelectedAccount()" disabled>删除当前账号</button>
         </div>
       </div>
 
@@ -147,15 +147,15 @@
     </div>
 
     <nav class="bottom-nav">
-      <button type="button" class="nav-item active" data-tab="steps">
+      <button type="button" class="nav-item active" data-tab="steps" onclick="event.stopPropagation(); setActiveTab('steps')">
         <span class="nav-icon">👟</span>
         <span class="nav-label">步数</span>
       </button>
-      <button type="button" class="nav-item" data-tab="accounts">
+      <button type="button" class="nav-item" data-tab="accounts" onclick="event.stopPropagation(); setActiveTab('accounts')">
         <span class="nav-icon">👤</span>
         <span class="nav-label">账号</span>
       </button>
-      <button type="button" class="nav-item" data-tab="logs">
+      <button type="button" class="nav-item" data-tab="logs" onclick="event.stopPropagation(); setActiveTab('logs')">
         <span class="nav-icon">📋</span>
         <span class="nav-label">日志</span>
       </button>
@@ -174,7 +174,7 @@
     </div>
   </div>
 
-  <script src="static/js/app.js?v=20260717-accounts-fix"></script>
+  <script src="static/js/app.js?v=20260717-account-actions-v2"></script>
 </body>
 </html>
 
