@@ -542,11 +542,13 @@ async function submitStepUpdate(button) {
   setActiveAccount(index, { silent: true });
   const account = accounts[index];
   const previousStep = currentStep;
+  if (!confirm('当前账号：' + account.name + '，确认刷步？')) { renderBusyState(false, button); return; }
   const localPlugin = getLocalStepWongPlugin();
   appendLog('info', localPlugin ? '⟳ 正在通过 APK 内置同步器提交...' : '⟳ 正在提交同步请求...');
   appendLog('line', '   · 账号: ' + account.name);
   appendLog('line', '   · 步数: ' + Number(currentStep).toLocaleString());
   if (localPlugin) appendLog('line', '   · 同步方式: 本地模式（无需 Cloudflare Worker）');
+  renderBusyState(true, button);
   let data = null;
   try {
     if (localPlugin) {
@@ -572,7 +574,7 @@ async function submitStepUpdate(button) {
 function setupSubmitButton() {
   const submitBtn = document.getElementById('submitBtn');
   if (!submitBtn) return;
-  submitBtn.addEventListener('click', async function () { if (this.disabled) return; renderBusyState(true, this); await submitStepUpdate(this); });
+  submitBtn.addEventListener('click', async function () { if (this.disabled) return; await submitStepUpdate(this); });
 }
 function simpleMarkdown(md) {
   let html = md
@@ -665,7 +667,6 @@ window.deleteSelectedAccount = function deleteSelectedAccount() {
 window.hideResult = hideResult;
 setupDelegatedActions();
 document.addEventListener('DOMContentLoaded', init);
-
 
 
 
