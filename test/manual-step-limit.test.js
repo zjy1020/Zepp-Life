@@ -8,9 +8,11 @@ function createElement() {
   const listeners = new Map();
   return {
     classList: {
-      add() {},
-      remove() {},
-      toggle() {}
+      classes: new Set(),
+      add(cls) { this.classes.add(cls); },
+      remove(cls) { this.classes.delete(cls); },
+      toggle(cls) { if (this.classes.has(cls)) this.classes.delete(cls); else this.classes.add(cls); },
+      has(cls) { return this.classes.has(cls); }
     },
     value: '',
     max: '',
@@ -37,6 +39,8 @@ function createAppHarness() {
     sliderMinLabel: createElement(),
     sliderMidLabel: createElement(),
     sliderMaxLabel: createElement(),
+    stepConfirm: createElement(),
+    stepInputRow: createElement(),
     stepRangeHint: createElement()
   };
   const storage = new Map();
@@ -69,6 +73,7 @@ function createAppHarness() {
       elements.stepInput.value = String(value);
       elements.stepInput.dispatch('keydown', { key: 'Enter' });
     },
+    run(code) { return vm.runInContext(code, context); },
     getCurrentStep() {
       return vm.runInContext('currentStep', context);
     },
@@ -90,4 +95,31 @@ test('manual input uses the global maximum while regular controls use the dynami
   app.commitManualStep('99999');
   assert.equal(app.getCurrentStep(), 98800);
   assert.equal(app.elements.stepSlider.max, '1001');
+});
+
+test('确定按钮确认手动输入', () => {
+  const app = createAppHarness();
+  app.elements.stepInput.value = '5000';
+  app.elements.stepConfirm.dispatch('click', { preventDefault() {}, stopPropagation() {} });
+  assert.equal(app.getCurrentStep(), 5000);
+});
+
+test('随机按钮在基准到基准+1000内生成', () => {
+  const app = createAppHarness();
+  app.run('stepHistory = [{ steps: 5000, success: true }]; lastSuccessStep = 5000;');
+  for (let i = 0; i < 20; i += 1) {
+    app.run('applyRandomStep()');
+    const step = app.getCurrentStep();
+    assert.ok(step >= 5000 && step <= 6000, 'unexpected ' + step);
+  }
+});
+
+test('点击确定后不会立刻重新进入输入模式', () => {
+  const app = createAppHarness();
+  app.elements.stepInput.value = '5000';
+  app.elements.stepConfirm.dispatch('click', { preventDefault() {}, stopPropagation() {} });
+  assert.equal(app.getCurrentStep(), 5000);
+  app.elements.stepDisplay.dispatch('click', { target: app.elements.stepDisplay });
+  assert.equal(app.elements.stepInputRow.classList.has('hidden'), true);
+  assert.equal(app.elements.stepNumber.classList.has('hidden'), false);
 });

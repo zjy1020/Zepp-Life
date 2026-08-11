@@ -1,7 +1,7 @@
 {
   "name": "zepp-life",
   "version": "1.0.0",
-  "description": "Y子步数 - Zepp Life 步数修改工具",
+  "description": "动动吧 - Zepp Life 步数修改工具",
   "private": true,
   "scripts": {
     "test": "node --test",

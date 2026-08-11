@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#E11D48">
-  <title>Y子步数 - 步数更新</title>
+  <meta name="theme-color" content="#1FA89A">
+  <title>动动吧</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@300..700&family=Quicksand:wght@400..700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="static/css/style.css">
 </head>
 <body>
@@ -19,17 +19,16 @@
         </div>
         <div class="header-copy">
           <div>
-            <h1 class="app-title">Y子步数</h1>
-            <span class="app-subtitle">步数更新工具</span>
+            <h1 class="app-title">动动吧</h1>
+            <span class="app-subtitle">动动吧</span>
           </div>
           <a href="https://github.com/lby0626" target="_blank" rel="noopener" aria-label="GitHub" class="icon-link">
             <img src="static/images/github-fill.png" alt="GitHub" width="18" height="18">
           </a>
-          <a href="https://wwbbt.lanzout.com/i6dYG3vszvcb" target="_blank" rel="noopener" aria-label="下载APK" class="download-link">下载</a>
-          <button type="button" id="tutorialBtn" class="tutorial-btn" title="微信步数绑定教学">📖</button>
+          <button type="button" id="tutorialBtn" class="tutorial-btn" title="微信步数绑定教学"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></button>
         </div>
       </div>
-      <button class="theme-toggle" id="themeToggle" aria-label="切换主题">🌙</button>
+      <button class="theme-toggle" id="themeToggle" aria-label="切换主题"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
     </header>
 
     <div class="tab-panel active" id="tab-steps">
@@ -42,34 +41,38 @@
           <span class="stat-label">记录</span>
           <strong class="stat-value" id="historyCount">0</strong>
         </div>
-        <div class="stat-card stat-card-wide">
-          <span class="stat-label">当前账号</span>
+        <div class="stat-card stat-card-wide account-current-card">
+          <div class="stat-label-row">
+            <span class="stat-label">当前账号</span>
+            <button type="button" class="mini-manage-btn" id="accountManageBtn">管理</button>
+          </div>
           <strong class="stat-value stat-value-small" id="activeAccountLabel">未选择</strong>
+        </div>
+      </div>
+
+      <div class="account-manage-panel hidden" id="accountManagePanel">
+        <label class="panel-label">选择账号</label>
+        <select id="accountSelect" class="rounded-select compact-select" aria-label="选择账号">
+          <option value="" disabled selected>— 请选择账号 —</option>
+        </select>
+        <div class="account-manage-row" id="accountManageRow" aria-label="当前账号管理">
+          <button type="button" class="account-action-btn" id="renameSelectedAccountBtn" data-account-action="rename-selected" onclick="event.stopPropagation(); renameSelectedAccount()" disabled>重命名</button>
+          <button type="button" class="account-action-btn danger" id="deleteSelectedAccountBtn" data-account-action="delete-selected" onclick="event.stopPropagation(); deleteSelectedAccount()" disabled>删除</button>
         </div>
       </div>
 
       <div class="step-display-card" id="stepDisplay" title="点击手动输入">
         <span class="step-number" id="stepNumber">1</span>
         <span class="step-unit">步</span>
-        <input type="number" class="step-input hidden" id="stepInput" min="1" max="98800" placeholder="输入步数">
+        <div class="step-input-row hidden" id="stepInputRow">
+          <input type="number" class="step-input" id="stepInput" min="1" max="98800" placeholder="输入步数">
+          <button type="button" class="step-confirm" id="stepConfirm">确定</button>
+        </div>
       </div>
       <p class="step-hint" id="stepHint">点击数字手动输入</p>
       <div class="step-range-hint" id="stepRangeHint">当前基准 1，本次最高 1,001</div>
 
-      <div class="step-tools" aria-label="步数快捷操作">
-        <button type="button" class="tool-btn tool-btn-primary" id="useLastSuccessBtn">沿用上次成功</button>
-        <button type="button" class="tool-btn" id="resetStepBtn">重置为 1</button>
-      </div>
-
-      <div class="increment-row" aria-label="推荐加步">
-        <button type="button" class="increment-btn" data-adjust="200">+200</button>
-        <button type="button" class="increment-btn" data-adjust="500">+500</button>
-        <button type="button" class="increment-btn" data-adjust="1000">+1000</button>
-      </div>
-
       <div class="preset-row smart-preset-row">
-        <button type="button" class="preset-btn" data-step="baseline" id="baselinePresetBtn">基准 1</button>
-        <button type="button" class="preset-btn" data-step="max" id="maxPresetBtn">最高 1,001</button>
         <button type="button" class="preset-btn" data-step="random">随机</button>
       </div>
 
@@ -82,27 +85,19 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">选择账号</label>
-        <select id="accountSelect" class="rounded-select">
-          <option value="" disabled selected>— 请选择账号 —</option>
-        </select>
-        <div class="account-manage-row" id="accountManageRow" aria-label="当前账号管理">
-          <button type="button" class="account-action-btn" id="renameSelectedAccountBtn" data-account-action="rename-selected" onclick="event.stopPropagation(); renameSelectedAccount()" disabled>重命名当前账号</button>
-          <button type="button" class="account-action-btn danger" id="deleteSelectedAccountBtn" data-account-action="delete-selected" onclick="event.stopPropagation(); deleteSelectedAccount()" disabled>删除当前账号</button>
-        </div>
-      </div>
+      <div class="sync-tip" id="syncTip">温馨提示：凌晨 0 点 - 早上 8 点禁止刷步，刷了也不会更新步数</div>
+
+      <button type="button" class="submit-btn" id="submitBtn">
+        <span class="btn-text">执 行 步 数</span>
+        <span class="btn-icon">→</span>
+      </button>
 
       <div id="resultBanner" class="result-banner hidden" aria-live="polite">
         <div class="result-icon" id="resultIcon">✓</div>
-        <span class="result-msg" id="resultMsg">修改成功！</span>
+        <span class="result-msg" id="resultMsg">同步成功！</span>
         <button type="button" class="result-close" onclick="hideResult()">✕</button>
       </div>
 
-      <button type="button" class="submit-btn" id="submitBtn">
-        <span class="btn-text">开 始 刷 步</span>
-        <span class="btn-icon">→</span>
-      </button>
 
       <div class="history-section">
         <div class="history-header">
@@ -111,9 +106,6 @@
         </div>
         <div id="historyList" class="history-list">
           <p class="history-empty">还没有提交记录</p>
-        </div>
-        <div id="chartContainer" class="chart-container hidden">
-          <svg id="stepChart" viewBox="0 0 340 160" preserveAspectRatio="xMidYMid meet"></svg>
         </div>
       </div>
     </div>
@@ -126,9 +118,12 @@
         <button type="button" id="addAccountBtn">+ 添加账号</button>
       </div>
 
-      <div class="account-section">
-        <span class="section-title">已保存账号</span>
-        <div id="accountList" class="account-list">
+      <div class="account-section" id="accountSection">
+        <button type="button" class="section-collapse-btn" id="accountCollapseBtn" aria-expanded="false">
+          <span>已保存账号</span>
+          <svg class="collapse-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div id="accountList" class="account-list hidden">
           <p class="history-empty">还没有账号，快添加一个吧</p>
         </div>
       </div>
@@ -148,15 +143,15 @@
 
     <nav class="bottom-nav">
       <button type="button" class="nav-item active" data-tab="steps" onclick="event.stopPropagation(); setActiveTab('steps')">
-        <span class="nav-icon">👟</span>
+        <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/></svg></span>
         <span class="nav-label">步数</span>
       </button>
       <button type="button" class="nav-item" data-tab="accounts" onclick="event.stopPropagation(); setActiveTab('accounts')">
-        <span class="nav-icon">👤</span>
+        <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
         <span class="nav-label">账号</span>
       </button>
       <button type="button" class="nav-item" data-tab="logs" onclick="event.stopPropagation(); setActiveTab('logs')">
-        <span class="nav-icon">📋</span>
+        <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg></span>
         <span class="nav-label">日志</span>
       </button>
     </nav>
@@ -174,9 +169,85 @@
     </div>
   </div>
 
-  <script src="static/js/app.js?v=20260717-account-actions-v2"></script>
+  <script type="text/markdown" id="tutorialMarkdown">
+# Zepp Life 微信步数同步教学
+
+## 1. 下载并安装 Zepp Life
+
+![](images/Pasted%20image%2020260616193355.png)
+
+手机下载 Zepp Life（原小米运动）App。应用商店搜不到的话用浏览器下载。
+
+---
+
+## 2. 登录账号
+
+![](images/Pasted%20image%2020260616193439.png)
+
+进入 App 后，点击右上角的「人物」图标。
+
+![](images/Pasted%20image%2020260616193509.png)
+
+点击「立即登录」。没有账号就注册一个，推荐用邮箱注册。**账号和密码一定要记好**，后面同步步数的时候要用。
+
+---
+
+## 3. 绑定微信
+
+![](images/Pasted%20image%2020260616193649.png)
+
+登录后回到「我的」页面，点击「第三方账户绑定」。
+
+![](images/Pasted%20image%2020260616193710.png)
+
+找到微信，点击进入。
+
+![](images/Pasted%20image%2020260616193736.png)
+
+点击「上传步数到微信」右侧的「未绑定」。
+
+![](images/Pasted%20image%2020260616193811.png)
+
+会弹出一个二维码，用想同步步数的微信扫码。
+
+![](images/Pasted%20image%2020260616193859.png)
+
+扫码后关注 **amazfit 华米** 服务号，点击绑定设备即可。
+
+> **取消绑定**：取消关注该服务号即可停止同步步数。
+
+---
+
+## 4. 开始同步步数
+
+完成以上绑定后，打开步数同步工具，用刚才的 Zepp Life 账号密码登录，设置步数提交即可。
+
+> 步数上限 98,800，不要超过。
+
+### 在线版
+
+- **主用**：https://lby0626.github.io/Zepp-Life/
+- **备用**：https://zjy1020.github.io/Zepp-Life/
+
+### 本地版（需 Python 环境）
+
+下载 `flask` 分支的代码，双击 `start.bat` 运行（会自动安装依赖）：
+- https://github.com/lby0626/Zepp-Life/tree/flask
+- https://github.com/zjy1020/Zepp-Life/tree/flask
+
+手动安装依赖：
+```bash
+pip install flask requests pycryptodome
+```
+
+### 研究接口
+
+项目仓库内有完整的 Zepp Life API 接口文档（AES 加密、登录流程、提交步数等），想深入研究可以查看：
+
+- **GitHub 仓库**：https://github.com/lby0626/Zepp-Life
+- **接口文档路径**：`docs/zepp-life-api.md`（后续可能不会更新了）
+</script>
+
+  <script src="static/js/app.js?v=20260811-local-sync"></script>
 </body>
 </html>
-
-
-

@@ -1,5 +1,5 @@
 // StepWong API - Cloudflare Worker
-// 代理 Zepp Life 步数修改 API，替代本地 Flask 后端
+// 代理 Zepp Life 步数同步 API，替代本地 Flask 后端
 
 const AES_KEY = new TextEncoder().encode('xeNtBVqzDc6tuNTh');
 const AES_IV  = new TextEncoder().encode('MAAAYAAAAAAAAABg');
@@ -56,7 +56,7 @@ function buildQuery(obj) {
 }
 
 /**
- * 执行全部刷步流程
+ * 执行全部同步流程
  */
 async function handleUpdate(user, password, steps) {
   const log = [];
@@ -222,8 +222,8 @@ async function handleUpdate(user, password, steps) {
   });
   const r4json = await r4.json();
 
-  log.push(`修改步数（${step}）[${r4json.message}]`);
-  return { success: true, message: `修改成功！当前步数: ${step}`, log: log.join('\n') };
+  log.push(`同步步数（${step}）[${r4json.message}]`);
+  return { success: true, message: `同步成功！当前步数: ${step}`, log: log.join('\n') };
 }
 
 export default {

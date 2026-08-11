@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main, feat/clash-control]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -39,11 +39,13 @@ jobs:
       - name: Init Capacitor Android
         run: npx cap add android
 
-      - name: Install Clash control plugin
+      - name: Install StepWong local plugin
         run: |
           set -e
           mkdir -p android/app/src/main/java/com/zepplife/steps
-          cp clash-plugin/ClashControlPlugin.java android/app/src/main/java/com/zepplife/steps/
+          cp stepwong-plugin/StepWongPlugin.java android/app/src/main/java/com/zepplife/steps/
+          mkdir -p android/app/src/main/assets
+          cp stepwong-plugin/data_json.tpl android/app/src/main/assets/data_json.tpl
           MAIN="android/app/src/main/java/com/zepplife/steps/MainActivity.java"
           echo 'package com.zepplife.steps;' > "$MAIN"
           echo '' >> "$MAIN"
@@ -53,7 +55,7 @@ jobs:
           echo 'public class MainActivity extends BridgeActivity {' >> "$MAIN"
           echo '    @Override' >> "$MAIN"
           echo '    public void onCreate(Bundle savedInstanceState) {' >> "$MAIN"
-          echo '        registerPlugin(ClashControlPlugin.class);' >> "$MAIN"
+          echo '        registerPlugin(StepWongPlugin.class);' >> "$MAIN"
           echo '        super.onCreate(savedInstanceState);' >> "$MAIN"
           echo '    }' >> "$MAIN"
           echo '}' >> "$MAIN"
@@ -104,5 +106,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Y子步数
+          name: 动动吧
           path: android/app/build/outputs/apk/debug/*.apk

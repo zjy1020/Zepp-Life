@@ -1,4 +1,4 @@
-# Y子步数
+# 动动吧
 
 Zepp Life（原小米运动）步数更新工具。项目提供网页/PWA 和 GitHub Actions 自动打包 APK，适合手机直接使用。
 
@@ -11,11 +11,11 @@ Zepp Life（原小米运动）步数更新工具。项目提供网页/PWA 和 Gi
 ## 功能亮点
 
 - **动态步数上限** — 默认基准为 `1`，本次最高 `基准 + 1000`；刷步成功后下次打开会沿用上次成功步数继续递增。
-- **智能快捷操作** — 支持 `+200` / `+500` / `+1000`、基准、最高、随机和重置，不再展示无效的大步数预设。
+- **随机步数** — 一键随机生成基准到基准 `+1000` 的步数；手动输入不受动态上限限制，带「确定」按钮方便手机确认。
 - **多账号管理** — 添加、删除、重命名 Zepp Life 账号，一键切换当前账号。
 - **账号成功记录** — 账号卡片显示该账号上次成功步数和时间。
-- **最近记录图表** — 最近 10 次记录支持趋势折线图和步数分布柱形图。
-- **一键提交** — 调用 Cloudflare Worker API 更新步数，实时日志反馈。
+- **最近记录** — 最近 10 次提交记录，含成功/失败状态。
+- **一键提交** — APK 内置本地同步器，无需访问 Cloudflare Worker；网页版自动回退到 Worker API，实时日志反馈。
 - **本地持久化** — 账号、历史记录、主题、当前步数都会保存到本地；APK 关闭后再次打开仍会保留。
 - **深色模式** — 支持亮色/深色主题切换。
 - **微信绑定教学** — 右上角教程入口查看 Zepp 绑定微信步数说明。
@@ -25,8 +25,8 @@ Zepp Life（原小米运动）步数更新工具。项目提供网页/PWA 和 Gi
 1. 打开网页或 APK。
 2. 切换到「账号」页，添加 Zepp Life 账号（手机号/邮箱 + 密码）。
 3. 回到「步数」页，选择账号。
-4. 使用滑条、`+200/+500/+1000` 或智能快捷设置步数。
-5. 点击「开始刷步」提交。
+4. 使用滑条、随机按钮或点击数字手动输入步数。
+5. 点击「执行步数」提交。
 
 ### 步数规则
 
@@ -40,7 +40,7 @@ Zepp Life（原小米运动）步数更新工具。项目提供网页/PWA 和 Gi
 
 - 推送到 `main` 分支会自动触发 `Build APK`。
 - 也可以在 GitHub Actions 页面手动运行 `workflow_dispatch`。
-- 构建完成后，在本次 workflow 的 Artifacts 中下载 `Y子步数` APK。
+- 构建完成后，在本次 workflow 的 Artifacts 中下载 `动动吧` APK。
 
 构建流程包含：
 
@@ -60,7 +60,7 @@ Zepp Life（原小米运动）步数更新工具。项目提供网页/PWA 和 Gi
 | API 层 | Cloudflare Worker |
 | 底层接口 | [redgreat/stepwong](https://github.com/redgreat/stepwong) |
 | 自动构建 | GitHub Actions |
-| 设计风格 | Candy Glass / Claymorphism |
+| 设计风格 | 像素风 / Pixel Fresh |
 
 ## 项目结构
 
@@ -76,7 +76,7 @@ Zepp-Life/
 │   └── images/                      # 图片资源
 ├── tutorial/                        # 微信步数绑定教程
 ├── worker/                          # Cloudflare Worker
-├── clash-plugin/                    # Android Clash 控制插件
+├── stepwong-plugin/                 # APK 内置本地同步插件（Java + 步数模板）
 └── docs/                            # 接口与项目文档
 ```
 
@@ -123,3 +123,4 @@ npx wrangler login
 ---
 
 Made by [zjy1020](https://github.com/zjy1020)
+- StepWong 本地同步插件打包（Java + 步数模板资源）
