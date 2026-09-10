@@ -220,10 +220,56 @@ async function handleUpdate(user, password, steps) {
     },
     body: postData,
   });
-  const r4json = await r4.json();
 
-  log.push(`同步步数（${step}）[${r4json.message}]`);
+  // 判定真实成败：不能只看有没有响应。
+  // 原实现无条件返回 success=true，导致提交失败也被记成"同步成功"。
+  let r4json;
+  try {
+    r4json = await r4.json();
+  } catch {
+    log.push(`同步响应解析失败，HTTP状态码: ${r4.status}`);
+    return { success: false, message: '提交步数失败：响应无法解析', log: log.join('\n') };
+  }
+
+  const message = r4json.message || '';
+  log.push(`同步步数（${step}）[HTTP ${r4.status}][${message}]`);
+
+  const verdict = judgeStepSubmit(r4.status, message);
+  if (!verdict.ok) {
+    log.push(`提交被服务端拒绝：${verdict.reason}`);
+    return { success: false, message: `同步失败：${verdict.reason}`, log: log.join('\n') };
+  }
+
   return { success: true, message: `同步成功！当前步数: ${step}`, log: log.join('\n') };
+}
+
+/**
+ * 判定步数提交是否真正成功。
+ *
+ * huami 的 band_data 接口在成功时返回 message="success"，
+ * 失败时会给出 4xx/5xx 状态码，或 message 中带有错误描述。
+ * 保守策略：只有明确看到成功标志才判成功，其余一律判失败，
+ * 避免把失败记录成成功（宁可误报失败，也不要污染成功记录与步数基准）。
+ */
+function judgeStepSubmit(httpStatus, message) {
+  if (httpStatus < 200 || httpStatus >= 300) {
+    return { ok: false, reason: `HTTP 状态码 ${httpStatus}` };
+  }
+  const msg = String(message == null ? '' : message).trim();
+  const lower = msg.toLowerCase();
+
+  if (lower.includes('success') || msg.includes('成功')) {
+    return { ok: true, reason: '' };
+  }
+  const failureKeywords = ['error', 'fail', 'invalid', 'denied', 'expired', 'unauthor'];
+  if (failureKeywords.some((k) => lower.includes(k)) || /失败|错误|无效/.test(msg)) {
+    return { ok: false, reason: msg || '服务端返回错误' };
+  }
+  // message 为空：部分情况下服务端成功但不回 message，按成功处理
+  if (!msg) {
+    return { ok: true, reason: '' };
+  }
+  return { ok: false, reason: msg };
 }
 
 export default {

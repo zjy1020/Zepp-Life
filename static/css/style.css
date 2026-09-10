@@ -220,6 +220,33 @@ img {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ---------- tab 方向感 ----------
+   三个 tab 共用同一个 fadeUp 就没有空间连续性。
+   按索引差决定从哪一侧滑入，用户才能感知"我往哪个方向去了"。 */
+
+.tab-panel.active.slide-left {
+  animation: slideInLeft 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tab-panel.active.slide-right {
+  animation: slideInRight 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(-18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* 数值翻滚时数字层的轻微拉伸——速度耦合的视觉化 */
+.step-number.is-rolling {
+  color: var(--primary);
+}
+
 .status-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -520,6 +547,9 @@ input[type="range"] {
   outline: none;
   appearance: none;
   background: var(--surface);
+  background-image: linear-gradient(var(--primary), var(--primary));
+  background-repeat: no-repeat;
+  background-size: var(--slider-fill, 0%) 100%;
   box-shadow: inset 3px 3px 0 rgba(32, 48, 60, 0.1);
   cursor: pointer;
 }
@@ -532,6 +562,11 @@ input[type="range"]::-webkit-slider-thumb {
   appearance: none;
   background: var(--primary);
   box-shadow: 2px 2px 0 var(--ink);
+  transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+input[type="range"].is-dragging::-webkit-slider-thumb {
+  transform: scale(1.18);
 }
 
 input[type="range"]::-moz-range-thumb {
@@ -541,6 +576,16 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 0;
   background: var(--primary);
   box-shadow: 2px 2px 0 var(--ink);
+  transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+input[type="range"].is-dragging::-moz-range-thumb {
+  transform: scale(1.18);
+}
+
+input[type="range"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .slider-labels {
@@ -1138,6 +1183,8 @@ input[type="range"]::-moz-range-thumb {
 .tutorial-body a { color: var(--primary-strong); font-weight: 800; }
 
 /* ---------- confetti ---------- */
+/* 位置由 motion.js 的 rAF 物理驱动（重力 + 摆动 + 自转）。
+   这里只负责外观，不要写 animation，否则会和 JS 争控制权。 */
 
 .confetti-container {
   position: fixed;
@@ -1149,14 +1196,10 @@ input[type="range"]::-moz-range-thumb {
 
 .confetti-piece {
   position: absolute;
-  top: -10px;
+  top: 0;
+  left: 0;
   border: 2px solid var(--ink);
-  animation: confettiFall linear forwards;
-}
-
-@keyframes confettiFall {
-  from { transform: translateY(0) rotate(0deg); opacity: 1; }
-  to { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+  will-change: transform, opacity;
 }
 
 /* ---------- utility / press ---------- */
@@ -1165,11 +1208,27 @@ input[type="range"]::-moz-range-thumb {
   display: none !important;
 }
 
+/* 按压反馈由 motion.js 的 pressFeedback() 接管（按下 steps 下沉、松手弹簧回弹）。
+   若在此处保留 CSS :active 的硬位移，会和 JS 的 transform 争控制权并导致抖动。
+   这里只保留"按下时阴影消失"这一条静态规则，位移交给 JS。 */
+
 .preset-btn:active, .step-confirm:active, .btn-sm:active, .clear-btn:active, .submit-btn:active,
 .add-account-card button:active, .tutorial-btn:active, .theme-toggle:active,
 .nav-item:active, .account-action-btn:not(:disabled):active, .modal-actions button:active, .result-close:active {
-  transform: translate(2px, 2px);
   box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-panel,
+  .tab-panel.active.slide-left,
+  .tab-panel.active.slide-right {
+    animation: none;
+  }
+
+  input[type="range"]::-webkit-slider-thumb,
+  input[type="range"]::-moz-range-thumb {
+    transition: none;
+  }
 }
 
 @media (max-width: 380px) {

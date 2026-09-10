@@ -260,14 +260,76 @@ public class StepWongPlugin extends Plugin {
             postData.getBytes(StandardCharsets.UTF_8),
             true
         );
-        JSONObject r4json = parseJson(r4);
+
+        // 判定真实成败：不能只看有没有响应。
+        // 原实现无条件返回 success=true，导致提交失败也被记成"同步成功"，
+        // 进而写入成功记录、推进步数基准——这是"记录对不上"的根因。
+        JSONObject r4json;
+        try {
+            r4json = parseJson(r4);
+        } catch (Exception e) {
+            log.add("同步响应解析失败，HTTP状态码: " + r4.status);
+            log.add("响应片段: " + r4.text(200));
+            return failure("提交步数失败：响应无法解析", log);
+        }
+
         String message = r4json.optString("message", "");
-        log.add("同步步数（" + step + "）[" + message + "]");
+        log.add("同步步数（" + step + "）[HTTP " + r4.status + "][" + message + "]");
+
+        StepSubmitVerdict verdict = judgeStepSubmit(r4.status, message);
+        if (!verdict.ok) {
+            log.add("提交被服务端拒绝：" + verdict.reason);
+            return failure("同步失败：" + verdict.reason, log);
+        }
 
         JSObject result = new JSObject();
         result.put("success", true);
         result.put("message", "同步成功！当前步数: " + step);
         return result;
+    }
+
+    /**
+     * 判定步数提交是否真正成功。
+     *
+     * huami 的 band_data 接口在成功时返回 message="success"（大小写/措辞可能微调），
+     * 失败时会给出 4xx/5xx 状态码，或 message 中带有错误描述。
+     * 这里采取保守策略：只有明确看到成功标志才判成功，其余一律判失败，
+     * 避免把失败记录成成功（宁可误报失败，也不要污染成功记录与步数基准）。
+     */
+    private static StepSubmitVerdict judgeStepSubmit(int httpStatus, String message) {
+        if (httpStatus < 200 || httpStatus >= 300) {
+            return StepSubmitVerdict.fail("HTTP 状态码 " + httpStatus);
+        }
+        String msg = message == null ? "" : message.trim();
+        String lower = msg.toLowerCase(Locale.US);
+
+        if (lower.contains("success") || msg.contains("成功")) {
+            return StepSubmitVerdict.pass();
+        }
+        if (lower.contains("error") || lower.contains("fail") || lower.contains("invalid")
+            || lower.contains("denied") || lower.contains("expired") || lower.contains("unauthor")
+            || msg.contains("失败") || msg.contains("错误") || msg.contains("无效")) {
+            return StepSubmitVerdict.fail(msg.isEmpty() ? "服务端返回错误" : msg);
+        }
+        // message 为空：部分情况下服务端成功但不回 message，按成功处理
+        if (msg.isEmpty()) {
+            return StepSubmitVerdict.pass();
+        }
+        // 有内容但既非成功也非明确的失败关键词——保守判失败
+        return StepSubmitVerdict.fail(msg);
+    }
+
+    private static class StepSubmitVerdict {
+        final boolean ok;
+        final String reason;
+
+        private StepSubmitVerdict(boolean ok, String reason) {
+            this.ok = ok;
+            this.reason = reason;
+        }
+
+        static StepSubmitVerdict pass() { return new StepSubmitVerdict(true, ""); }
+        static StepSubmitVerdict fail(String reason) { return new StepSubmitVerdict(false, reason); }
     }
 
     private static byte[] encryptLoginData(byte[] plain) throws Exception {

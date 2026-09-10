@@ -1,5 +1,5 @@
 const WORKER_URL = 'https://stepwong-api.3255962845.workers.dev';
-const STORAGE_KEYS = { accounts: 'stepwong_accounts', history: 'stepwong_history', theme: 'stepwong_theme', tab: 'stepwong_tab', step: 'stepwong_step', lastSuccessStep: 'stepwong_last_success_step' };
+const STORAGE_KEYS = { accounts: 'stepwong_accounts', history: 'stepwong_history', theme: 'stepwong_theme', tab: 'stepwong_tab', step: 'stepwong_step', lastSuccessStep: 'stepwong_last_success_step', lastResetDate: 'stepwong_last_reset_date', schedules: 'stepwong_schedules' };
 const THEME_ICONS = {
   light: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
   dark: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>',
@@ -13,6 +13,8 @@ let currentStep = 1;
 let activeTab = 'steps';
 let lastSuccessStep = null;
 let delegatedActionsReady = false;
+let rollCancel = null;
+const TAB_ORDER = ['steps', 'accounts', 'logs'];
 
 function readJSON(key, fallback) {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
@@ -35,6 +37,71 @@ function getLatestStepBaseline() {
   const latestSuccess = getLastSuccessfulHistory();
   if (latestSuccess) return latestSuccess.steps;
   return lastSuccessStep || STEP_LIMITS.min;
+}
+
+/* ---------- 每日清零 ----------
+   规则：跨过自然日（过了 0 点）后，步数基准与动态上限一并重置为 1 / 1001。
+   实现方式：记录"上次清零日期"，每次启动与每次操作前比对当前日期。
+   不与"上次成功步数"耦合，因为清零的语义就是**忘掉昨天的成绩**。 */
+
+function getTodayKey() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function hasCrossedNewDay() {
+  const last = localStorage.getItem(STORAGE_KEYS.lastResetDate);
+  if (!last) return false; // 首次使用：没有"上一次"可言，不算跨天
+  return last !== getTodayKey();
+}
+
+/* 执行清零。返回 true 表示本次确实发生了重置。 */
+function applyDailyReset(options = {}) {
+  const { persist = true, silent = false } = options;
+  const last = localStorage.getItem(STORAGE_KEYS.lastResetDate);
+
+  /* 首次使用：只落下日期基线，不清空任何东西 */
+  if (!last) {
+    if (persist) localStorage.setItem(STORAGE_KEYS.lastResetDate, getTodayKey());
+    return false;
+  }
+  if (last === getTodayKey()) return false;
+
+  stepHistory = [];
+  lastSuccessStep = null;
+  currentStep = STEP_LIMITS.min;
+
+  localStorage.removeItem(STORAGE_KEYS.history);
+  localStorage.removeItem(STORAGE_KEYS.lastSuccessStep);
+  localStorage.removeItem(STORAGE_KEYS.step);
+  if (persist) localStorage.setItem(STORAGE_KEYS.lastResetDate, getTodayKey());
+
+  if (!silent) appendLog('line', '   · 已跨天，步数基准与上限重置为 ' + formatStep(STEP_LIMITS.min) + ' / ' + formatStep(STEP_LIMITS.min + STEP_INCREMENT_LIMIT));
+  return true;
+}
+
+/* 跨天检测触发点：启动时、以及每次提交前。
+   提交前检测可覆盖"App 一直开着跨了 0 点"的情况。 */
+function ensureFreshDay() {
+  if (!hasCrossedNewDay()) return false;
+  const didReset = applyDailyReset({ persist: true, silent: true });
+  if (didReset) {
+    updateSliderRange();
+    setStep(STEP_LIMITS.min, { persist: false, animate: false });
+    renderHistory();
+    renderSummary();
+  }
+  return didReset;
+}
+
+/* 进入新一天时同步给自己排一次午夜闹钟（保证后台也能在 0 点后清零） */
+function scheduleNextMidnightReset() {
+  const plugin = getLocalStepWongPlugin();
+  if (!plugin?.scheduleMidnightReset) return;
+  try { plugin.scheduleMidnightReset(); } catch { /* 忽略：非 APK 环境 */ }
 }
 
 function getDynamicStepMax() {
@@ -72,6 +139,7 @@ function updateSliderRange() {
   if (midLabel) midLabel.textContent = formatStep(Math.round((STEP_LIMITS.min + max) / 2));
   if (maxLabel) maxLabel.textContent = formatStep(max);
   if (rangeHint) rangeHint.textContent = getStepRangeHintText();
+  updateSliderFill();
 }
 function getActiveAccountIndex() { return accounts.findIndex((acct) => acct.is_active); }
 function getActiveAccount() { const index = getActiveAccountIndex(); return index >= 0 ? accounts[index] : null; }
@@ -153,21 +221,58 @@ function renderSummary() {
   if (activeLabel) { const active = getActiveAccount(); activeLabel.textContent = active ? active.name : '未选择'; activeLabel.title = active ? active.user : '未选择账号'; }
 }
 function setStep(value, options = {}) {
-  const { persist = true, max = getDynamicStepMax() } = options;
+  const { persist = true, max = getDynamicStepMax(), animate = true } = options;
   updateSliderRange();
+  const previousStep = currentStep;
   currentStep = clampStep(value, max);
   const stepNumber = document.getElementById('stepNumber');
   const stepSlider = document.getElementById('stepSlider');
   const stepInput = document.getElementById('stepInput');
-  if (stepNumber) stepNumber.textContent = formatStep(currentStep);
+  if (stepNumber) {
+    const kit = window.MotionKit;
+    if (animate && kit && Math.abs(previousStep - currentStep) > 1 && !stepNumber.classList.contains('hidden')) {
+      stepNumber.classList.add('is-rolling');
+      rollCancel?.();
+      rollCancel = kit.rollNumber(previousStep, currentStep, {
+        duration: 420,
+        onUpdate: (v) => { stepNumber.textContent = formatStep(v); },
+        onDone: () => {
+          stepNumber.textContent = formatStep(currentStep);
+          stepNumber.classList.remove('is-rolling');
+        }
+      });
+    } else {
+      stepNumber.textContent = formatStep(currentStep);
+    }
+  }
   if (stepSlider) stepSlider.value = String(currentStep);
   if (stepInput) stepInput.value = String(currentStep);
+  updateSliderFill();
   if (persist) localStorage.setItem(STORAGE_KEYS.step, String(currentStep));
+}
+function updateSliderFill() {
+  const slider = document.getElementById('stepSlider');
+  if (!slider || !slider.style || typeof slider.style.setProperty !== 'function') return;
+  const min = Number(slider.min) || 0;
+  const max = Number(slider.max) || 100;
+  const val = Number(slider.value) || 0;
+  const percent = max > min ? ((val - min) / (max - min)) * 100 : 0;
+  slider.style.setProperty('--slider-fill', percent.toFixed(2) + '%');
 }function setActiveTab(tab, options = {}) {
   const { persist = true } = options;
+  const previousTab = activeTab;
   activeTab = tab;
   document.querySelectorAll('.nav-item').forEach((button) => button.classList.toggle('active', button.dataset.tab === tab));
-  document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.toggle('active', panel.id === 'tab-' + tab));
+  document.querySelectorAll('.tab-panel').forEach((panel) => {
+    const isActive = panel.id === 'tab-' + tab;
+    panel.classList.toggle('active', isActive);
+    if (isActive && previousTab !== tab) {
+      const from = TAB_ORDER.indexOf(previousTab);
+      const to = TAB_ORDER.indexOf(tab);
+      const direction = (from >= 0 && to >= 0 && to < from) ? -1 : 1;
+      window.MotionKit?.panelEnter(panel, direction);
+    }
+  });
   if (persist) localStorage.setItem(STORAGE_KEYS.tab, tab);
 }
 function renderHistory() {
@@ -266,23 +371,12 @@ function showResult(success, message) {
 }
 function hideResult() { document.getElementById('resultBanner')?.classList.add('hidden'); }
 function spawnConfetti() {
-  const container = document.createElement('div');
-  container.className = 'confetti-container';
-  const colors = ['#1FA89A', '#4A9FE8', '#F26D5B', '#F2B83C', '#2F9E6E', '#20303C'];
-  for (let i = 0; i < 40; i += 1) {
-    const piece = document.createElement('div');
-    piece.className = 'confetti-piece';
-    piece.style.left = Math.random() * 100 + '%';
-    piece.style.background = colors[Math.floor(Math.random() * colors.length)];
-    piece.style.width = Math.random() * 8 + 4 + 'px';
-    piece.style.height = Math.random() * 8 + 4 + 'px';
-    piece.style.borderRadius = '0px';
-    piece.style.animationDuration = Math.random() * 1.5 + 1.5 + 's';
-    piece.style.animationDelay = Math.random() * 0.5 + 's';
-    container.appendChild(piece);
+  const kit = window.MotionKit;
+  if (kit?.spawnConfetti) {
+    kit.spawnConfetti({ count: 42, colors: ['#1FA89A', '#4A9FE8', '#F26D5B', '#F2B83C', '#2F9E6E', '#20303C'] });
+    return;
   }
-  document.body.appendChild(container);
-  setTimeout(() => container.remove(), 3500);
+  /* 降级：内核不可用时保持静默，不阻塞成功反馈 */
 }
 function createRequestSignal(timeoutMs) {
   if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(timeoutMs);
@@ -349,7 +443,36 @@ function setupQuickStepButtons() {
     if (button.dataset.step === 'random') applyRandomStep();
     clearManualStepInput();
   }));
-  document.getElementById('stepSlider')?.addEventListener('input', function () { setStep(this.value); clearManualStepInput(); });
+  const slider = document.getElementById('stepSlider');
+  if (!slider) return;
+  const kit = window.MotionKit;
+  const coupler = kit?.velocityCouple ? kit.velocityCouple(slider.parentElement, { gain: 0.4, max: 5 }) : null;
+  let dragging = false;
+  slider.addEventListener('input', function () {
+    setStep(this.value);
+    clearManualStepInput();
+    coupler?.nudge(Number(this.value));
+  });
+  const startDrag = () => { dragging = true; slider.classList.add('is-dragging'); };
+  const endDrag = () => { dragging = false; slider.classList.remove('is-dragging'); };
+  slider.addEventListener('pointerdown', startDrag);
+  slider.addEventListener('pointerup', endDrag);
+  slider.addEventListener('pointercancel', endDrag);
+  slider.addEventListener('pointerleave', endDrag);
+}
+
+/* 给可点击元素挂上按压回弹。像素按键不回弹就是"死"的。 */
+function setupPressFeedback() {
+  const kit = window.MotionKit;
+  if (!kit?.pressFeedback) return;
+  const selector = '.preset-btn, .step-confirm, .submit-btn, .clear-btn, .btn-sm, .nav-item, ' +
+    '.account-action-btn, .tutorial-btn, .theme-toggle, .result-close, .add-account-card button, ' +
+    '.section-collapse-btn, .mini-manage-btn, .modal-actions button';
+  document.querySelectorAll(selector).forEach((el) => {
+    if (el.dataset.pressBound) return;
+    el.dataset.pressBound = '1';
+    kit.pressFeedback(el, { depth: 3 });
+  });
 }
 function setupAccountCollapse() {
   const btn = document.getElementById('accountCollapseBtn');
@@ -536,6 +659,10 @@ function setupAddAccountForm() {
 }
 async function submitStepUpdate(button) {
   hideResult();
+  /* 提交前再查一次跨天：App 一直挂着跨过 0 点时，需要就地重置而不是沿用昨天的基准 */
+  if (ensureFreshDay()) {
+    appendLog('line', '   · 检测到已跨天，本次提交从新基准 ' + formatStep(currentStep) + ' 开始');
+  }
   const select = document.getElementById('accountSelect');
   const index = Number.parseInt(select?.value || '', 10);
   if (Number.isNaN(index) || index < 0 || index >= accounts.length) { renderBusyState(false, button); appendLog('error', '✖ 请先选择账号！'); return; }
@@ -627,11 +754,14 @@ function setupTutorial() {
 
 function init() {
   loadHistory();
+  /* 跨天检测要早于 loadStep，否则会用昨天的基准算出今天的上限 */
+  const didDailyReset = applyDailyReset({ persist: true, silent: true });
   loadAccounts();
   loadTheme();
   loadTab();
   loadStep();
-  setStep(currentStep, { persist: false });
+  if (didDailyReset) currentStep = STEP_LIMITS.min;
+  setStep(currentStep, { persist: false, animate: false });
   setActiveTab(activeTab, { persist: false });
   renderSummary();
   renderHistory();
@@ -651,6 +781,8 @@ function init() {
   updateSyncTip();
   setupSubmitButton();
   setupTutorial();
+  setupPressFeedback();
+  scheduleNextMidnightReset();
 }
 window.useAccount = function useAccount(index) { setActiveAccount(index, { silent: false }); };
 window.renameAccount = renameAccount;
