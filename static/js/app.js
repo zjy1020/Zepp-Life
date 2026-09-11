@@ -1,7 +1,7 @@
 const WORKER_URL = 'https://stepwong-api.3255962845.workers.dev';
 const STORAGE_KEYS = { accounts: 'stepwong_accounts', history: 'stepwong_history', historyArchive: 'stepwong_history_archive', theme: 'stepwong_theme', tab: 'stepwong_tab', step: 'stepwong_step', lastSuccessStep: 'stepwong_last_success_step', lastResetDate: 'stepwong_last_reset_date', authCache: 'stepwong_auth_cache', lastSubmitAt: 'stepwong_last_submit_at', logs: 'stepwong_logs' };
 /* 当前版本号。升版本时与 Release 的 tag 保持一致，便于在界面里确认装的是哪一版 */
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.0.5';
 const RELEASES_API = 'https://api.github.com/repos/zjy1020/Zepp-Life/releases/latest';
 /* 两次提交之间的最小间隔。华米按来源 IP 限流，短窗口内连发多轮即触发 429；
    冷却挡的是误触连点，代价由失败后的无效重试承担。 */
@@ -21,7 +21,6 @@ const THEME_ICONS = {
 };
 const STEP_LIMITS = { min: 1, max: 98800 };
 const STEP_INCREMENT_LIMIT = 1000;
-const QUICK_PRESETS = [3000, 8000, 25000, 50000];
 let accounts = [];
 let stepHistory = [];
 let currentStep = 1;
@@ -649,14 +648,6 @@ function applyRandomStep() {
   const value = Math.floor(Math.random() * (max - min + 1)) + min;
   setStep(value);
 }
-
-/* 快捷档位是「绝对步数」，与手动输入同级，因此用全局上限而非动态上限。
-   动态上限是 基准+1000，若沿用它，3k/8k/25k/50k 会被全部夹成同一个无意义的值。 */
-function applyPresetStep(rawStep) {
-  const value = Number.parseInt(rawStep, 10);
-  if (!Number.isFinite(value) || value <= 0) return;
-  setStep(value, { max: STEP_LIMITS.max });
-}
 function setupStepInput() {
   const display = document.getElementById('stepDisplay');
   const input = document.getElementById('stepInput');
@@ -690,9 +681,7 @@ function setupStepInput() {
 }
 function setupQuickStepButtons() {
   document.querySelectorAll('.preset-btn').forEach((button) => button.addEventListener('click', () => {
-    const step = button.dataset.step;
-    if (step === 'random') applyRandomStep();
-    else applyPresetStep(step);
+    if (button.dataset.step === 'random') applyRandomStep();
     clearManualStepInput();
   }));
   const slider = document.getElementById('stepSlider');

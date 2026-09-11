@@ -505,17 +505,6 @@ img {
   margin-bottom: 14px;
 }
 
-/* 随机 + 4 档绝对步数并排。列窄，需收紧内边距与字号，否则标签会被挤断 */
-.smart-preset-row {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-.smart-preset-row .preset-btn {
-  min-height: 46px;
-  padding: 0 2px;
-  font-size: 14px;
-}
-
 .preset-btn, .btn-sm, .clear-btn, .account-action-btn {
   border: 3px solid var(--ink);
   border-radius: 0;

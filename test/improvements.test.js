@@ -108,50 +108,6 @@ function createHarness({ localPlugin, storageSeed } = {}) {
   };
 }
 
-/* ---------- 4 快捷档位 ---------- */
-
-test('快捷档位走全局上限，而默认路径被动态上限夹住', () => {
-  const app = createHarness();
-  app.run('stepHistory = []; lastSuccessStep = null;');
-
-  app.run('setStep(25000)');
-  assert.equal(app.run('currentStep'), 1001, '默认路径应被动态上限（基准+1000）夹住');
-
-  app.run('applyPresetStep("25000")');
-  assert.equal(app.run('currentStep'), 25000, '快捷档位应可达绝对步数');
-});
-
-test('快捷档位超过全局上限时被夹到 98800，非法值被忽略', () => {
-  const app = createHarness();
-  app.run('stepHistory = []; lastSuccessStep = null; currentStep = 500;');
-
-  app.run('applyPresetStep("99999")');
-  assert.equal(app.run('currentStep'), 98800);
-
-  app.run('applyPresetStep("abc")');
-  assert.equal(app.run('currentStep'), 98800, '非法输入不应改变当前值');
-
-  app.run('applyPresetStep("-5")');
-  assert.equal(app.run('currentStep'), 98800);
-});
-
-test('setupQuickStepButtons 把非 random 按钮接到绝对步数', () => {
-  const app = createHarness();
-  const buttons = ['random', '3000', '8000', '25000', '50000'].map((step) => {
-    const el = createElement();
-    el.dataset.step = step;
-    return el;
-  });
-  const context = app.run('typeof setupQuickStepButtons');
-  assert.equal(context, 'function');
-
-  /* document.querySelectorAll 在本 harness 里返回空数组，这里直接验证分支逻辑 */
-  app.run('stepHistory = []; lastSuccessStep = null;');
-  app.run('applyPresetStep("8000")');
-  assert.equal(app.run('currentStep'), 8000);
-  assert.equal(buttons.length, 5, '快捷档位应有 5 个按钮（随机 + 4 档）');
-});
-
 /* ---------- 3 时段提示与模式指示 ---------- */
 
 test('本地模式：隐藏时段提示，副标题显示「本地直连」', () => {
