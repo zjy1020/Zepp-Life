@@ -347,6 +347,11 @@ function updateAccountManagementControls() {
   if (deleteBtn) deleteBtn.disabled = !hasAccount;
   row?.classList.toggle('is-disabled', !hasAccount);
 }
+function formatLogTime(date) {
+  const d = date instanceof Date ? date : new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+}
 function appendLog(type, text) {
   const log = document.getElementById('logContent');
   if (!log) return;
@@ -357,7 +362,9 @@ function appendLog(type, text) {
   prompt.textContent = '>';
   const line = document.createElement('span');
   line.className = 'log-line ' + type;
-  line.textContent = ' ' + text;
+  /* 前端事件打墙钟时间；同步器内部步骤自带 [+耗时] 前缀。
+     两者回答的是不同问题：什么时候发生 vs 每一步花了多久。 */
+  line.textContent = ' [' + formatLogTime() + '] ' + text;
   row.append(prompt, line);
   log.appendChild(row);
   log.scrollTop = log.scrollHeight;
@@ -756,7 +763,7 @@ async function submitStepUpdate(button) {
   const localPlugin = getLocalStepWongPlugin();
   const cached = getCachedAuth(account.user);
   appendLog('info', localPlugin ? '⟳ 正在通过 APK 内置同步器提交...' : '⟳ 正在提交同步请求...');
-  appendLog('line', '   · 账号: ' + account.name);
+  appendLog('line', '   · 账号: ' + account.name + '（' + desensitize(account.user) + '）');
   appendLog('line', '   · 步数: ' + Number(currentStep).toLocaleString());
   if (localPlugin) appendLog('line', '   · 同步方式: 本地模式（无需 Cloudflare Worker）');
   appendLog('line', '   · 令牌缓存: ' + (cached ? '命中，本次仅 1 个请求' : '无，走完整登录 4 个请求'));

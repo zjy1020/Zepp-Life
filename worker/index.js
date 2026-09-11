@@ -50,8 +50,30 @@ function buildQuery(obj) {
 /**
  * 执行全部同步流程
  */
+// 带耗时前缀与请求计数的日志容器。每条日志自动带上「相对本次流程起点的毫秒偏移」，
+// 同时保留 join() 以兼容原有的 log.join('\n') 调用点。
+function createFlowLog() {
+  const start = Date.now();
+  const lines = [];
+  return {
+    requests: 0,
+    push(text) { lines.push(`[+${Date.now() - start}ms] ${text}`); },
+    join() { return lines.join('\n'); },
+    mark() { return Date.now(); },
+    since(from) { return Date.now() - from; },
+    elapsed() { return Date.now() - start; }
+  };
+}
+
+// 日志里只保留 userid 前 8 位，够用于比对是否换过账号，又不至于完整暴露。
+function maskId(value) {
+  const text = String(value || '');
+  if (!text) return '(空)';
+  return text.length <= 8 ? text : text.slice(0, 8) + '…';
+}
+
 async function handleUpdate(user, password, steps, cachedUserId, cachedAppToken) {
-  const log = [];
+  const log = createFlowLog();
   const deviceId = crypto.randomUUID();
   const isPhone = user.startsWith('+86') || !user.includes('@');
 
@@ -64,16 +86,17 @@ async function handleUpdate(user, password, steps, cachedUserId, cachedAppToken)
   // 令牌缓存：命中时跳过登录三步，请求量从 4 降到 1。
   // 被限流的正是登录端点（api-user.zepp.com），跳过它等于不再触碰限流接口。
   if (userId && appToken) {
-    log.push('命中缓存令牌，跳过登录（本次仅 1 个请求）');
+    log.push('命中缓存令牌，跳过登录（预期仅 1 个请求）');
     const cached = await submitSteps(userId, appToken, steps, log);
     if (cached.ok) {
-      return { success: true, message: `同步成功！当前步数: ${steps}`, userId, appToken, log: log.join('\n') };
+      log.push(`本次共发出 ${log.requests} 个请求，总耗时 ${log.elapsed()}ms —— 成功（缓存令牌）`);
+      return { success: true, message: `同步成功！当前步数: ${steps}`, userId, appToken, log: log.join() };
     }
     // 缓存令牌可能已失效：不直接失败，回退完整登录重试一次
     log.push(`缓存令牌提交未通过：${cached.reason}，回退完整登录`);
   }
 
-  log.push('执行完整登录（共 4 个请求）');
+  log.push('执行完整登录（预期共 4 个请求）');
   let login;
   try {
     login = await runLoginFlow(user, password, deviceId, isPhone, log);
@@ -82,16 +105,19 @@ async function handleUpdate(user, password, steps, cachedUserId, cachedAppToken)
     // 必须在这里兜住，才能把已经累积的日志一并返回给前端；
     // 抛到外层只会得到一个空 log。
     if (err instanceof FlowError) {
-      return { success: false, message: err.message, log: log.join('\n') };
+      log.push(`本次共发出 ${log.requests} 个请求，总耗时 ${log.elapsed()}ms —— 失败：${err.message}`);
+      return { success: false, message: err.message, log: log.join() };
     }
     throw err;
   }
 
   const submit = await submitSteps(login.userId, login.appToken, steps, log);
   if (!submit.ok) {
-    return { success: false, message: submit.reason, log: log.join('\n') };
+    log.push(`本次共发出 ${log.requests} 个请求，总耗时 ${log.elapsed()}ms —— 失败：${submit.reason}`);
+    return { success: false, message: submit.reason, log: log.join() };
   }
-  return { success: true, message: `同步成功！当前步数: ${steps}`, userId: login.userId, appToken: login.appToken, log: log.join('\n') };
+  log.push(`本次共发出 ${log.requests} 个请求，总耗时 ${log.elapsed()}ms —— 成功（完整登录）`);
+  return { success: true, message: `同步成功！当前步数: ${steps}`, userId: login.userId, appToken: login.appToken, log: log.join() };
 }
 
 // 完整登录：加密登录 -> login_token -> app_token。任何一步被限流都立刻中止并说明原因。
@@ -124,12 +150,15 @@ async function runLoginFlow(user, password, deviceId, isPhone, log) {
   // 原实现在 429 上做零延迟热重试：从已经枯竭的配额里再抢一次，
   // 只会延长限流窗口，且把「被限流」误报成「获取 accessToken 失败」。
   // 现在改为直接中止，并给出可据此行动的原因。
+  const t1 = log.mark();
   const r1 = await fetch('https://api-user.zepp.com/v2/registrations/tokens', {
     method: 'POST',
     headers: headers1,
     body: encrypted,
     redirect: 'manual',
   });
+  log.requests += 1;
+  log.push(`登录第一步 [HTTP ${r1.status}] 耗时 ${log.since(t1)}ms`);
 
   if (r1.status === 429) {
     log.push('登录第一步被限流（HTTP 429）');
@@ -190,11 +219,14 @@ async function runLoginFlow(user, password, deviceId, isPhone, log) {
         third_name: 'email',
       };
 
+  const t2 = log.mark();
   const r2 = await fetch('https://account.huami.com/v2/client/login', {
     method: 'POST',
     headers: headers2,
     body: new URLSearchParams(data2).toString(),
   });
+  log.requests += 1;
+  log.push(`登录第二步 [HTTP ${r2.status}] 耗时 ${log.since(t2)}ms`);
 
   if (r2.status === 429) {
     log.push('登录第二步被限流（HTTP 429）');
@@ -223,9 +255,12 @@ async function runLoginFlow(user, password, deviceId, isPhone, log) {
 
   // ===== 获取 app_token =====
   const url3 = `https://account-cn.huami.com/v1/client/app_tokens?app_name=com.xiaomi.hm.health&dn=api-user.huami.com%2Capi-mifit.huami.com%2Capp-analytics.huami.com&login_token=${loginToken}`;
+  const t3 = log.mark();
   const r3 = await fetch(url3, {
     headers: { 'User-Agent': 'MiFit/5.3.0 (iPhone; iOS 14.7.1; Scale/3.00)' },
   });
+  log.requests += 1;
+  log.push(`获取 app_token [HTTP ${r3.status}] 耗时 ${log.since(t3)}ms`);
 
   if (r3.status === 429) {
     log.push('获取 app_token 被限流（HTTP 429）');
@@ -261,10 +296,12 @@ async function submitSteps(userId, appToken, steps, log) {
   // 替换 data_json 中的日期和步数
   let dataJson = DATA_JSON_TPL.replace('2021-08-07', today);
   dataJson = dataJson.replace(/(ttl%5C%22%3A)\d+/, '$1' + step);
+  log.push(`提交目标: userid ${maskId(userId)}，日期 ${today}，步数 ${step}，data_json ${dataJson.length} 字节`);
 
   const t = Date.now().toString();
   const postData = `userid=${userId}&last_sync_data_time=1597306380&device_type=0&last_deviceid=DA932FFFFE8816E7&data_json=${dataJson}`;
 
+  const t4 = log.mark();
   const r4 = await fetch(`https://api-mifit-cn.huami.com/v1/data/band_data.json?&t=${t}`, {
     method: 'POST',
     headers: {
@@ -273,6 +310,8 @@ async function submitSteps(userId, appToken, steps, log) {
     },
     body: postData,
   });
+  log.requests += 1;
+  log.push(`提交步数 [HTTP ${r4.status}] 耗时 ${log.since(t4)}ms`);
 
   if (r4.status === 429) {
     log.push('提交步数被限流（HTTP 429）');

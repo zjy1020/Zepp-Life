@@ -58,7 +58,7 @@ public class StepWongPlugin extends Plugin {
         /* 可选的令牌缓存：命中时跳过登录三步，请求量从 4 降到 1 */
         final String cachedUserId = call.getString("userId", "");
         final String cachedAppToken = call.getString("appToken", "");
-        final List<String> log = new ArrayList<>();
+        final FlowLog log = new FlowLog();
 
         if (user.isEmpty() || password.isEmpty()) {
             JSObject error = new JSObject();
@@ -99,7 +99,7 @@ public class StepWongPlugin extends Plugin {
 
     private JSObject handleUpdate(String user, String password, int steps,
                                   String cachedUserId, String cachedAppToken,
-                                  List<String> log) throws Exception {
+                                  FlowLog log) throws Exception {
         final String deviceId = UUID.randomUUID().toString();
         final boolean isPhone = user.startsWith("+86") || !user.contains("@");
         log.add("设备ID:" + deviceId);
@@ -111,28 +111,31 @@ public class StepWongPlugin extends Plugin {
         /* 令牌缓存：命中时跳过登录三步，请求量从 4 降到 1。
            被限流的正是登录端点（api-user.zepp.com），跳过它等于不再触碰限流接口。 */
         if (!userId.isEmpty() && !appToken.isEmpty()) {
-            log.add("命中缓存令牌，跳过登录（本次仅 1 个请求）");
+            log.add("命中缓存令牌，跳过登录（预期仅 1 个请求）");
             SubmitOutcome cached = submitSteps(userId, appToken, steps, log);
             if (cached.ok) {
+                log.add("本次共发出 " + log.requests + " 个请求，总耗时 " + log.elapsed() + "ms —— 成功（缓存令牌）");
                 return success(steps, userId, appToken);
             }
             /* 缓存令牌可能已失效：不直接失败，回退完整登录重试一次 */
             log.add("缓存令牌提交未通过：" + cached.reason + "，回退完整登录");
         }
 
-        log.add("执行完整登录（共 4 个请求）");
+        log.add("执行完整登录（预期共 4 个请求）");
         LoginToken login = runLoginFlow(user, password, deviceId, isPhone, log);
 
         SubmitOutcome submit = submitSteps(login.userId, login.appToken, steps, log);
         if (!submit.ok) {
+            log.add("本次共发出 " + log.requests + " 个请求，总耗时 " + log.elapsed() + "ms —— 失败：" + submit.reason);
             return failure(submit.reason, log);
         }
+        log.add("本次共发出 " + log.requests + " 个请求，总耗时 " + log.elapsed() + "ms —— 成功（完整登录）");
         return success(steps, login.userId, login.appToken);
     }
 
     /** 完整登录：加密登录 -> login_token -> app_token。任何一步被限流都立刻中止并说明原因。 */
     private LoginToken runLoginFlow(String user, String password, String deviceId,
-                                    boolean isPhone, List<String> log) throws Exception {
+                                    boolean isPhone, FlowLog log) throws Exception {
         Map<String, String> loginData = new LinkedHashMap<>();
         loginData.put("emailOrPhone", user);
         loginData.put("password", password);
@@ -158,7 +161,10 @@ public class StepWongPlugin extends Plugin {
         /* 原实现在 429 上做零延迟热重试：从已经枯竭的配额里再抢一次，
            只会延长限流窗口，且把「被限流」误报成「获取 accessToken 失败」。
            现在改为直接中止，并给出可据此行动的原因。 */
+        long t1 = log.mark();
         HttpResponse r1 = httpRequest("POST", "https://api-user.zepp.com/v2/registrations/tokens", headers1, encrypted, false);
+        log.requests++;
+        log.add("登录第一步 [HTTP " + r1.status + "] 耗时 " + log.since(t1) + "ms");
 
         if (r1.status == 429) {
             log.add("登录第一步被限流（HTTP 429）");
@@ -215,6 +221,7 @@ public class StepWongPlugin extends Plugin {
             data2.put("third_name", "email");
         }
 
+        long t2 = log.mark();
         HttpResponse r2 = httpRequest(
             "POST",
             "https://account.huami.com/v2/client/login",
@@ -222,6 +229,8 @@ public class StepWongPlugin extends Plugin {
             urlSearchParams(data2).getBytes(StandardCharsets.UTF_8),
             true
         );
+        log.requests++;
+        log.add("登录第二步 [HTTP " + r2.status + "] 耗时 " + log.since(t2) + "ms");
 
         if (r2.status == 429) {
             log.add("登录第二步被限流（HTTP 429）");
@@ -250,7 +259,11 @@ public class StepWongPlugin extends Plugin {
         Map<String, String> headers3 = new LinkedHashMap<>();
         headers3.put("User-Agent", "MiFit/5.3.0 (iPhone; iOS 14.7.1; Scale/3.00)");
 
+        long t3 = log.mark();
         HttpResponse r3 = httpRequest("GET", url3, headers3, null, true);
+        log.requests++;
+        log.add("获取 app_token [HTTP " + r3.status + "] 耗时 " + log.since(t3) + "ms");
+
         if (r3.status == 429) {
             log.add("获取 app_token 被限流（HTTP 429）");
             throw new FlowException(rateLimitedMessage("获取 app_token", r3));
@@ -273,11 +286,12 @@ public class StepWongPlugin extends Plugin {
     }
 
     /** 提交步数。返回结构化结果，由调用方决定是否回退完整登录。 */
-    private SubmitOutcome submitSteps(String userId, String appToken, int steps, List<String> log) throws Exception {
+    private SubmitOutcome submitSteps(String userId, String appToken, int steps, FlowLog log) throws Exception {
         String today = getToday();
         String step = String.valueOf(steps);
         String dataJson = loadDataJsonTemplate().replace("2021-08-07", today);
         dataJson = dataJson.replaceFirst("(ttl%5C%22%3A)\\d+", "$1" + step);
+        log.add("提交目标: userid " + maskId(userId) + "，日期 " + today + "，步数 " + step + "，data_json " + dataJson.length() + " 字节");
 
         String t = String.valueOf(System.currentTimeMillis());
         String postData = "userid=" + userId
@@ -290,6 +304,7 @@ public class StepWongPlugin extends Plugin {
         headers4.put("apptoken", appToken);
         headers4.put("Content-Type", "application/x-www-form-urlencoded");
 
+        long t4 = log.mark();
         HttpResponse r4 = httpRequest(
             "POST",
             "https://api-mifit-cn.huami.com/v1/data/band_data.json?&t=" + t,
@@ -297,6 +312,8 @@ public class StepWongPlugin extends Plugin {
             postData.getBytes(StandardCharsets.UTF_8),
             true
         );
+        log.requests++;
+        log.add("提交步数 [HTTP " + r4.status + "] 耗时 " + log.since(t4) + "ms");
 
         if (r4.status == 429) {
             log.add("提交步数被限流（HTTP 429）");
@@ -346,6 +363,41 @@ public class StepWongPlugin extends Plugin {
             return Long.parseLong(value.trim());
         } catch (NumberFormatException e) {
             return -1;
+        }
+    }
+
+    /** 日志里只保留 userid 前 8 位，够用于比对是否换过账号，又不至于完整暴露。 */
+    private static String maskId(String value) {
+        if (value == null || value.isEmpty()) {
+            return "(空)";
+        }
+        return value.length() <= 8 ? value : value.substring(0, 8) + "…";
+    }
+
+    /**
+     * 带耗时前缀与请求计数的日志容器。
+     * 每条日志自动带上「相对本次流程起点的毫秒偏移」，这样日志本身就能说明
+     * 每一步花了多久、两次尝试之间隔了多久——不必再去推算。
+     */
+    private static class FlowLog extends ArrayList<String> {
+        private final long start = System.currentTimeMillis();
+        int requests = 0;
+
+        @Override
+        public boolean add(String text) {
+            return super.add("[+" + (System.currentTimeMillis() - start) + "ms] " + text);
+        }
+
+        long mark() {
+            return System.currentTimeMillis();
+        }
+
+        long since(long from) {
+            return System.currentTimeMillis() - from;
+        }
+
+        long elapsed() {
+            return System.currentTimeMillis() - start;
         }
     }
 
