@@ -43,7 +43,7 @@ function createElement() {
   };
 }
 
-function createHarness({ localPlugin, storageSeed } = {}) {
+function createHarness({ localPlugin, storageSeed, fetchImpl } = {}) {
   const elements = new Map();
   const logLines = [];
   const logContent = createElement();
@@ -75,7 +75,7 @@ function createHarness({ localPlugin, storageSeed } = {}) {
       querySelectorAll() { return []; },
       createElement() { return createElement(); }
     },
-    fetch: async () => { throw new Error('本用例不应发起网络请求'); },
+    fetch: fetchImpl || (async () => { throw new Error('本用例不应发起网络请求'); }),
     localStorage: {
       getItem(key) { return storage.has(key) ? storage.get(key) : null; },
       removeItem(key) { storage.delete(key); },
@@ -255,14 +255,122 @@ test('能从带中文前缀的 Release tag 中解析版本号', () => {
   assert.equal(app.run('parseVersion("没有版本号")'), null);
 });
 
-test('页脚显示当前版本；有新版时追加提示', () => {
+test('页脚按状态显示当前版本与更新情况', () => {
   const app = createHarness({ localPlugin: true });
   app.run('renderVersionInfo()');
   const base = app.el('logFooter').textContent;
   assert.ok(base.includes('v' + app.run('APP_VERSION')), '应含当前版本号: ' + base);
   assert.ok(base.includes('本地直连'), '应含同步模式: ' + base);
-  assert.ok(!base.includes('有新版本'), '没有新版时不应提示更新');
+  assert.ok(!base.includes('有新版本'), '尚未检查时不应提示更新');
 
-  app.run('latestVersion = "99.0.0"; renderVersionInfo();');
+  app.run('updateState = "latest"; renderVersionInfo();');
+  assert.ok(app.el('logFooter').textContent.includes('已是最新'));
+
+  app.run('latestVersion = "99.0.0"; updateState = "outdated"; renderVersionInfo();');
   assert.ok(app.el('logFooter').textContent.includes('有新版本 v99.0.0'));
+
+  app.run('updateState = "failed"; renderVersionInfo();');
+  assert.ok(app.el('logFooter').textContent.includes('检查更新失败'));
+});
+
+/* ---------- 7b 手动检查更新 ---------- */
+
+function releaseResponse(tag) {
+  return { ok: true, status: 200, json: async () => ({ tag_name: tag }) };
+}
+
+test('自动检查：拉到与本地相同版本 -> 页脚「已是最新」且不写日志', async () => {
+  const app = createHarness({
+    fetchImpl: async () => releaseResponse('动动吧-v' + app.run('APP_VERSION'))
+  });
+
+  await app.run('checkForUpdate()');
+
+  assert.equal(app.run('updateState'), 'latest');
+  assert.ok(app.el('logFooter').textContent.includes('已是最新'));
+  assert.equal(app.logLines.length, 0, '自动检查成功且无新版时不应打扰用户');
+});
+
+test('自动检查：拉到更高版本 -> 页脚提示并写日志', async () => {
+  const app = createHarness({ fetchImpl: async () => releaseResponse('动动吧-v99.9.9') });
+
+  await app.run('checkForUpdate()');
+
+  assert.equal(app.run('updateState'), 'outdated');
+  assert.ok(app.el('logFooter').textContent.includes('有新版本 v99.9.9'));
+  assert.ok(app.logLines.some((l) => l.includes('发现新版本 v99.9.9')), '应写入日志');
+});
+
+test('手动检查：已是最新时给出明确反馈', async () => {
+  const app = createHarness({
+    fetchImpl: async () => releaseResponse('动动吧-v' + app.run('APP_VERSION'))
+  });
+
+  await app.run('checkForUpdate({ manual: true })');
+
+  assert.equal(app.run('updateState'), 'latest');
+  assert.ok(app.logLines.some((l) => l.includes('已是最新版本')), '手动检查应写入日志: ' + JSON.stringify(app.logLines));
+});
+
+test('手动检查失败：页脚明示失败并写入原因', async () => {
+  const app = createHarness({ fetchImpl: async () => { throw new Error('网络不可用'); } });
+
+  await app.run('checkForUpdate({ manual: true })');
+
+  assert.equal(app.run('updateState'), 'failed');
+  assert.ok(app.el('logFooter').textContent.includes('检查更新失败'));
+  assert.ok(app.logLines.some((l) => l.includes('检查更新失败') && l.includes('网络不可用')));
+});
+
+test('接口返回非 2xx 时判为失败，而不是当作已是最新', async () => {
+  const app = createHarness({
+    fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) })
+  });
+
+  await app.run('checkForUpdate({ manual: true })');
+
+  assert.equal(app.run('updateState'), 'failed');
+  assert.ok(app.logLines.some((l) => l.includes('HTTP 404')));
+});
+
+test('检查进行中：按钮禁用并显示「检查中…」', async () => {
+  let during = null;
+  let release;
+  const app = createHarness({
+    fetchImpl: () => new Promise((resolve) => {
+      during = {
+        btnText: app.el('checkUpdateBtn').textContent,
+        btnDisabled: app.el('checkUpdateBtn').disabled,
+        footer: app.el('logFooter').textContent
+      };
+      release = resolve;
+    })
+  });
+
+  const pending = app.run('checkForUpdate({ manual: true })');
+
+  assert.ok(during, 'fetch 应已被调用');
+  assert.equal(during.btnDisabled, true, '检查中按钮应禁用');
+  assert.equal(during.btnText, '检查中…');
+  assert.ok(during.footer.includes('检查中…'));
+
+  release(releaseResponse('动动吧-v1.0.0'));
+  await pending;
+});
+
+test('检查进行中重复触发会被忽略，只发一次请求', async () => {
+  let calls = 0;
+  let release;
+  const app = createHarness({
+    fetchImpl: () => { calls += 1; return new Promise((resolve) => { release = resolve; }); }
+  });
+
+  const first = app.run('checkForUpdate({ manual: true })');
+  const second = await app.run('checkForUpdate({ manual: true })');
+
+  assert.equal(second, null, '进行中再次调用应直接返回 null');
+  assert.equal(calls, 1, '只应发出一次请求');
+
+  release(releaseResponse('动动吧-v1.0.0'));
+  await first;
 });

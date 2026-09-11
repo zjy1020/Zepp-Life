@@ -1,7 +1,7 @@
 const WORKER_URL = 'https://stepwong-api.3255962845.workers.dev';
 const STORAGE_KEYS = { accounts: 'stepwong_accounts', history: 'stepwong_history', historyArchive: 'stepwong_history_archive', theme: 'stepwong_theme', tab: 'stepwong_tab', step: 'stepwong_step', lastSuccessStep: 'stepwong_last_success_step', lastResetDate: 'stepwong_last_reset_date', authCache: 'stepwong_auth_cache', lastSubmitAt: 'stepwong_last_submit_at', logs: 'stepwong_logs' };
 /* 当前版本号。升版本时与 Release 的 tag 保持一致，便于在界面里确认装的是哪一版 */
-const APP_VERSION = '1.0.5';
+const APP_VERSION = '1.0.6';
 const RELEASES_API = 'https://api.github.com/repos/zjy1020/Zepp-Life/releases/latest';
 /* 两次提交之间的最小间隔。华米按来源 IP 限流，短窗口内连发多轮即触发 429；
    冷却挡的是误触连点，代价由失败后的无效重试承担。 */
@@ -754,6 +754,7 @@ function setupThemeToggle() { document.getElementById('themeToggle')?.addEventLi
 function setupLogControls() {
   document.getElementById('clearLogBtn')?.addEventListener('click', clearLog);
   document.getElementById('copyLogBtn')?.addEventListener('click', copyLog);
+  document.getElementById('checkUpdateBtn')?.addEventListener('click', () => { checkForUpdate({ manual: true }); });
 }
 function setupHistoryControls() { document.getElementById('clearHistoryBtn')?.addEventListener('click', clearHistory); }
 function setupAccountSelectBinding() {
@@ -1080,33 +1081,80 @@ function compareVersion(a, b) {
 
 let latestVersion = '';
 
+/* 检查更新的四种终态 + 进行中。
+   之前只做静默自动检查，导致"已是最新"和"根本没查成"在界面上完全一样——
+   加手动按钮后必须把状态显式表达出来。 */
+const UPDATE_STATE = { idle: 'idle', checking: 'checking', latest: 'latest', outdated: 'outdated', failed: 'failed' };
+let updateState = UPDATE_STATE.idle;
+
 function renderVersionInfo() {
   const el = document.getElementById('logFooter');
-  if (!el) return;
-  const mode = getLocalStepWongPlugin() ? '本地直连' : '网页模式';
-  el.textContent = (latestVersion && compareVersion(latestVersion, APP_VERSION) > 0)
-    ? '动动吧 v' + APP_VERSION + ' · ' + mode + ' · 有新版本 v' + latestVersion
-    : '动动吧 v' + APP_VERSION + ' · ' + mode;
+  const btn = document.getElementById('checkUpdateBtn');
+  const checking = updateState === UPDATE_STATE.checking;
+
+  if (el) {
+    const mode = getLocalStepWongPlugin() ? '本地直连' : '网页模式';
+    const parts = ['动动吧 v' + APP_VERSION, mode];
+    if (checking) parts.push('检查中…');
+    else if (updateState === UPDATE_STATE.outdated) parts.push('有新版本 v' + latestVersion);
+    else if (updateState === UPDATE_STATE.latest) parts.push('已是最新');
+    else if (updateState === UPDATE_STATE.failed) parts.push('检查更新失败');
+    el.textContent = parts.join(' · ');
+  }
+
+  if (btn) {
+    btn.disabled = checking;
+    btn.textContent = checking ? '检查中…' : '检查更新';
+  }
 }
 
-async function checkForUpdate() {
-  if (typeof fetch !== 'function') return;
+/* 检查 GitHub Releases 的最新版本。
+   manual=true 时（用户点了按钮）会把结果写进日志，包括失败原因。 */
+async function checkForUpdate(options = {}) {
+  const manual = !!options.manual;
+  if (updateState === UPDATE_STATE.checking) return null;
+
+  if (typeof fetch !== 'function') {
+    updateState = UPDATE_STATE.failed;
+    renderVersionInfo();
+    return null;
+  }
+
+  updateState = UPDATE_STATE.checking;
+  renderVersionInfo();
+  if (manual) appendLog('info', '⟳ 正在检查新版本…');
+
   try {
     const response = await fetch(RELEASES_API, {
       headers: { Accept: 'application/vnd.github+json' },
       signal: createRequestSignal(8000)
     });
-    if (!response.ok) return;
+    if (!response.ok) {
+      throw new Error('HTTP ' + response.status);
+    }
     const data = await response.json();
     const parsed = parseVersion(data && data.tag_name);
-    if (!parsed) return;
-    latestVersion = parsed.join('.');
-    renderVersionInfo();
-    if (compareVersion(latestVersion, APP_VERSION) > 0) {
-      appendLog('info', '发现新版本 v' + latestVersion + '（当前 v' + APP_VERSION + '），可在 GitHub Releases 下载');
+    if (!parsed) {
+      throw new Error('响应中没有可识别的版本号');
     }
-  } catch {
-    /* 检查更新失败不打扰用户：离线、接口限流都很正常 */
+    latestVersion = parsed.join('.');
+    updateState = compareVersion(latestVersion, APP_VERSION) > 0 ? UPDATE_STATE.outdated : UPDATE_STATE.latest;
+    renderVersionInfo();
+
+    if (updateState === UPDATE_STATE.outdated) {
+      appendLog('info', '发现新版本 v' + latestVersion + '（当前 v' + APP_VERSION + '），可在 GitHub Releases 下载');
+    } else if (manual) {
+      appendLog('success', '✔ 已是最新版本 v' + APP_VERSION);
+    }
+    return latestVersion;
+  } catch (err) {
+    updateState = UPDATE_STATE.failed;
+    latestVersion = '';
+    renderVersionInfo();
+    if (manual) {
+      appendLog('error', '✖ 检查更新失败：' + ((err && err.message) || '网络不可用'));
+    }
+    return null;
   }
 }
 

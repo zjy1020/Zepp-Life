@@ -1,6 +1,6 @@
 {
   "name": "zepp-life",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "description": "动动吧 - Zepp Life 步数修改工具",
   "private": true,
   "scripts": {

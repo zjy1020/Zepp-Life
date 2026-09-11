@@ -100,6 +100,21 @@ jobs:
       - name: Sync web assets
         run: npx cap sync
 
+      - name: Sync app version into Android
+        run: |
+          # 以 static/js/app.js 里的 APP_VERSION 为唯一来源，
+          # 避免 App 内显示 1.0.6、系统里却显示 1.0
+          VERSION=$(grep -oP "APP_VERSION = '\K[0-9]+\.[0-9]+\.[0-9]+" static/js/app.js | head -1)
+          if [ -z "$VERSION" ]; then
+            echo "未取到 APP_VERSION，保留默认值"
+            exit 0
+          fi
+          CODE=$(echo "$VERSION" | awk -F. '{printf "%d%02d%02d", $1, $2, $3}')
+          sed -i "s/^\(\s*versionCode \).*/\1$CODE/" android/app/build.gradle
+          sed -i "s/^\(\s*versionName \).*/\1\"$VERSION\"/" android/app/build.gradle
+          echo "APP_VERSION=$VERSION versionCode=$CODE"
+          grep -nE "versionCode|versionName" android/app/build.gradle
+
       - name: Build APK
         run: cd android && ./gradlew assembleDebug
 

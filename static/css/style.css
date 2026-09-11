@@ -749,10 +749,16 @@ input[type="range"]:disabled {
 }
 
 .log-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   margin-top: 10px;
+}
+
+.log-footer-text {
   color: var(--muted);
   font-size: 12px;
-  text-align: center;
 }
 
 .history-list, .account-list {
