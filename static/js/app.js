@@ -1,5 +1,8 @@
 const WORKER_URL = 'https://stepwong-api.3255962845.workers.dev';
-const STORAGE_KEYS = { accounts: 'stepwong_accounts', history: 'stepwong_history', theme: 'stepwong_theme', tab: 'stepwong_tab', step: 'stepwong_step', lastSuccessStep: 'stepwong_last_success_step', lastResetDate: 'stepwong_last_reset_date', schedules: 'stepwong_schedules', authCache: 'stepwong_auth_cache', lastSubmitAt: 'stepwong_last_submit_at' };
+const STORAGE_KEYS = { accounts: 'stepwong_accounts', history: 'stepwong_history', historyArchive: 'stepwong_history_archive', theme: 'stepwong_theme', tab: 'stepwong_tab', step: 'stepwong_step', lastSuccessStep: 'stepwong_last_success_step', lastResetDate: 'stepwong_last_reset_date', authCache: 'stepwong_auth_cache', lastSubmitAt: 'stepwong_last_submit_at', logs: 'stepwong_logs' };
+/* 当前版本号。升版本时与 Release 的 tag 保持一致，便于在界面里确认装的是哪一版 */
+const APP_VERSION = '1.0.4';
+const RELEASES_API = 'https://api.github.com/repos/zjy1020/Zepp-Life/releases/latest';
 /* 两次提交之间的最小间隔。华米按来源 IP 限流，短窗口内连发多轮即触发 429；
    冷却挡的是误触连点，代价由失败后的无效重试承担。 */
 const SUBMIT_COOLDOWN_MS = 60000;
@@ -7,6 +10,11 @@ const SUBMIT_COOLDOWN_MS = 60000;
    同一天内复用，跨天自然失效走完整登录。即使提前失效也不会卡住——
    插件在提交失败时会回退完整登录，前端也会清掉这份缓存。 */
 const AUTH_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+/* 日志持久化上限。日志是排查问题的唯一线索，刷新即丢太浪费；
+   但也不能无限增长撑爆 localStorage，按行数截断。 */
+const LOG_MAX_LINES = 400;
+/* 历史归档上限（天） */
+const HISTORY_ARCHIVE_DAYS = 30;
 const THEME_ICONS = {
   light: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
   dark: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>',
@@ -51,12 +59,54 @@ function getLatestStepBaseline() {
    实现方式：记录"上次清零日期"，每次启动与每次操作前比对当前日期。
    不与"上次成功步数"耦合，因为清零的语义就是**忘掉昨天的成绩**。 */
 
-function getTodayKey() {
-  const d = new Date();
+/* 把时间戳格式化为本地日期键 YYYY-MM-DD */
+function dateKeyOf(time) {
+  const d = time instanceof Date ? time : new Date(time);
+  if (Number.isNaN(d.getTime())) return '';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function getTodayKey() {
+  return dateKeyOf(new Date());
+}
+
+/* ---------- 历史归档 ----------
+   跨天清零会把当天的记录一并删除，导致"昨天刷过什么"完全查不到。
+   清零前先把记录按各自的实际日期并入归档；界面上仍以今天为主。 */
+function loadHistoryArchive() {
+  const archive = readJSON(STORAGE_KEYS.historyArchive, {});
+  return archive && typeof archive === 'object' && !Array.isArray(archive) ? archive : {};
+}
+
+function archiveHistory(entries, fallbackDateKey) {
+  const list = Array.isArray(entries) ? entries : [];
+  if (!list.length) return;
+  const archive = loadHistoryArchive();
+  list.forEach((item) => {
+    const key = dateKeyOf(item?.time) || fallbackDateKey;
+    if (!key) return;
+    if (!Array.isArray(archive[key])) archive[key] = [];
+    archive[key].push(item);
+  });
+  Object.keys(archive).forEach((key) => {
+    archive[key] = archive[key].slice(0, 10);
+  });
+  Object.keys(archive).sort().reverse().slice(HISTORY_ARCHIVE_DAYS).forEach((key) => {
+    delete archive[key];
+  });
+  writeJSON(STORAGE_KEYS.historyArchive, archive);
+}
+
+function renderHistoryDay(title, entries) {
+  const items = entries.map((item) => {
+    const timeStr = formatHistoryTime(item.time);
+    const stateClass = item.success ? 'is-success' : 'is-error';
+    return `<div class="history-item ${stateClass}"><div class="history-main"><span class="h-account">${escapeHtml(item.account)}</span><span class="history-status ${stateClass}">${item.success ? '成功' : '失败'}</span></div><div class="history-sub"><span class="h-step">${Number(item.steps).toLocaleString()} 步</span><span class="h-time">${timeStr}</span></div></div>`;
+  }).join('');
+  return `<div class="history-day"><div class="history-day-title">${escapeHtml(title)}</div>${items}</div>`;
 }
 
 function hasCrossedNewDay() {
@@ -76,6 +126,9 @@ function applyDailyReset(options = {}) {
     return false;
   }
   if (last === getTodayKey()) return false;
+
+  /* 先把当天的记录并入归档，再清空——否则跨天之后就再也查不到昨天刷过什么 */
+  archiveHistory(stepHistory, last);
 
   stepHistory = [];
   lastSuccessStep = null;
@@ -104,11 +157,29 @@ function ensureFreshDay() {
   return didReset;
 }
 
-/* 进入新一天时同步给自己排一次午夜闹钟（保证后台也能在 0 点后清零） */
-function scheduleNextMidnightReset() {
-  const plugin = getLocalStepWongPlugin();
-  if (!plugin?.scheduleMidnightReset) return;
-  try { plugin.scheduleMidnightReset(); } catch { /* 忽略：非 APK 环境 */ }
+/* ---------- 零点自动归零 ----------
+   原实现调用 plugin.scheduleMidnightReset()，但插件端从未实现这个方法，
+   调用总是静默失败——等于"界面挂在前台跨过 0 点不会归零"。
+   改用纯 JS 定时器：只在页面存活时生效，而这恰好就是界面需要刷新的场景；
+   后台期间的跨天仍由 ensureFreshDay()（启动时 + 每次提交前）兜底。 */
+let midnightTimer = null;
+
+function scheduleMidnightTick() {
+  if (midnightTimer && typeof clearTimeout === 'function') clearTimeout(midnightTimer);
+  midnightTimer = null;
+  if (typeof setTimeout !== 'function') return;
+  /* 多等 2 秒，避免因时钟精度落在 23:59:59.999 而立刻触发 */
+  const now = new Date();
+  const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 2, 0);
+  midnightTimer = setTimeout(() => {
+    midnightTimer = null;
+    if (ensureFreshDay()) {
+      appendLog('line', '   · 已跨零点，步数基准与上限已自动归零');
+    }
+    /* 时段提示依赖当前小时，跨点后需要重算 */
+    updateSyncTip();
+    scheduleMidnightTick();
+  }, nextMidnight.getTime() - now.getTime());
 }
 
 function getDynamicStepMax() {
@@ -284,12 +355,15 @@ function updateSliderFill() {
 }
 function renderHistory() {
   const list = document.getElementById('historyList');
-  if (!stepHistory.length) { list.innerHTML = '<p class="history-empty">还没有提交记录</p>'; return; }
-  list.innerHTML = stepHistory.map((item) => {
-    const timeStr = formatHistoryTime(item.time);
-    const stateClass = item.success ? 'is-success' : 'is-error';
-    return `<div class="history-item ${stateClass}"><div class="history-main"><span class="h-account">${escapeHtml(item.account)}</span><span class="history-status ${stateClass}">${item.success ? '成功' : '失败'}</span></div><div class="history-sub"><span class="h-step">${Number(item.steps).toLocaleString()} 步</span><span class="h-time">${timeStr}</span></div></div>`;
-  }).join('');
+  if (!list) return;
+  const blocks = [];
+  if (stepHistory.length) blocks.push(renderHistoryDay('今天', stepHistory));
+  const archive = loadHistoryArchive();
+  Object.keys(archive).sort().reverse().forEach((key) => {
+    const entries = Array.isArray(archive[key]) ? archive[key] : [];
+    if (entries.length) blocks.push(renderHistoryDay(key, entries));
+  });
+  list.innerHTML = blocks.length ? blocks.join('') : '<p class="history-empty">还没有提交记录</p>';
 }
 
 function renderAccountList() {
@@ -352,24 +426,116 @@ function formatLogTime(date) {
   const pad = (n) => String(n).padStart(2, '0');
   return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
 }
-function appendLog(type, text) {
-  const log = document.getElementById('logContent');
-  if (!log) return;
+/* ---------- 日志 ----------
+   日志是排查问题的唯一线索，刷新即丢太浪费，因此同时写入 localStorage。
+   内存里保留最近 LOG_MAX_LINES 行，落盘做节流避免逐行写。 */
+let logBuffer = [];
+let logPersistTimer = null;
+
+function writeLogsToStorage() {
+  try {
+    writeJSON(STORAGE_KEYS.logs, logBuffer);
+  } catch {
+    /* localStorage 配额满：日志可丢，不能因此打断主流程 */
+  }
+}
+
+function persistLogsThrottled() {
+  if (typeof setTimeout !== 'function') { writeLogsToStorage(); return; }
+  if (logPersistTimer) return;
+  logPersistTimer = setTimeout(() => {
+    logPersistTimer = null;
+    writeLogsToStorage();
+  }, 400);
+}
+
+function renderLogRow(log, entry) {
   const row = document.createElement('div');
   row.className = 'log-row';
   const prompt = document.createElement('span');
   prompt.className = 'log-prompt';
   prompt.textContent = '>';
   const line = document.createElement('span');
-  line.className = 'log-line ' + type;
-  /* 前端事件打墙钟时间；同步器内部步骤自带 [+耗时] 前缀。
-     两者回答的是不同问题：什么时候发生 vs 每一步花了多久。 */
-  line.textContent = ' [' + formatLogTime() + '] ' + text;
+  line.className = 'log-line ' + (entry.type || '');
+  line.textContent = entry.text;
   row.append(prompt, line);
   log.appendChild(row);
+}
+
+function appendLog(type, text) {
+  /* 前端事件打墙钟时间；同步器内部步骤自带 [+耗时] 前缀。
+     两者回答的是不同问题：什么时候发生 vs 每一步花了多久。 */
+  const entry = { type, text: ' [' + formatLogTime() + '] ' + text };
+  logBuffer.push(entry);
+  if (logBuffer.length > LOG_MAX_LINES) logBuffer = logBuffer.slice(-LOG_MAX_LINES);
+  persistLogsThrottled();
+
+  const log = document.getElementById('logContent');
+  if (!log) return;
+  renderLogRow(log, entry);
   log.scrollTop = log.scrollHeight;
 }
-function clearLog() { const log = document.getElementById('logContent'); if (log) log.innerHTML = '<div class="log-row"><span class="log-prompt">&gt;</span><span class="log-line">系统就绪，等待执行...</span></div>'; }
+
+/* 启动时回填上次会话的日志，这样"上次为什么失败"不用重新复现 */
+function loadPersistedLogs() {
+  const saved = readJSON(STORAGE_KEYS.logs, []);
+  if (!Array.isArray(saved) || !saved.length) return;
+  logBuffer = saved.filter((item) => item && typeof item.text === 'string').slice(-LOG_MAX_LINES);
+  const log = document.getElementById('logContent');
+  if (!log) return;
+  log.innerHTML = '';
+  logBuffer.forEach((entry) => renderLogRow(log, entry));
+  log.scrollTop = log.scrollHeight;
+}
+
+function clearLog() {
+  logBuffer = [];
+  if (logPersistTimer && typeof clearTimeout === 'function') clearTimeout(logPersistTimer);
+  logPersistTimer = null;
+  try { localStorage.removeItem(STORAGE_KEYS.logs); } catch { /* 忽略 */ }
+  const log = document.getElementById('logContent');
+  if (log) log.innerHTML = '<div class="log-row"><span class="log-prompt">&gt;</span><span class="log-line">系统就绪，等待执行...</span></div>';
+}
+
+function logText() {
+  return logBuffer.map((entry) => String(entry.text).replace(/^ /, '')).join('\n');
+}
+
+/* 写剪贴板：优先用异步剪贴板 API，失败则退回临时 textarea + execCommand。
+   WebView 里前者的可用性取决于安全上下文，两条路都留着更稳。 */
+async function writeClipboard(text) {
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* 落到降级方案 */ }
+  try {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.left = '-9999px';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(area);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+async function copyLog() {
+  const text = logText();
+  if (!text) {
+    appendLog('line', '   · 日志为空，没有可复制的内容');
+    return;
+  }
+  const ok = await writeClipboard(text);
+  appendLog(ok ? 'success' : 'error',
+    ok ? '✔ 已复制 ' + logBuffer.length + ' 行日志到剪贴板' : '✖ 复制失败，请长按日志手动选择');
+}
 function haptic(type) { if (!navigator.vibrate) return; navigator.vibrate(type === 'success' ? 30 : [60, 30, 60]); }
 function showResult(success, message) {
   const banner = document.getElementById('resultBanner');
@@ -483,6 +649,14 @@ function applyRandomStep() {
   const value = Math.floor(Math.random() * (max - min + 1)) + min;
   setStep(value);
 }
+
+/* 快捷档位是「绝对步数」，与手动输入同级，因此用全局上限而非动态上限。
+   动态上限是 基准+1000，若沿用它，3k/8k/25k/50k 会被全部夹成同一个无意义的值。 */
+function applyPresetStep(rawStep) {
+  const value = Number.parseInt(rawStep, 10);
+  if (!Number.isFinite(value) || value <= 0) return;
+  setStep(value, { max: STEP_LIMITS.max });
+}
 function setupStepInput() {
   const display = document.getElementById('stepDisplay');
   const input = document.getElementById('stepInput');
@@ -516,7 +690,9 @@ function setupStepInput() {
 }
 function setupQuickStepButtons() {
   document.querySelectorAll('.preset-btn').forEach((button) => button.addEventListener('click', () => {
-    if (button.dataset.step === 'random') applyRandomStep();
+    const step = button.dataset.step;
+    if (step === 'random') applyRandomStep();
+    else applyPresetStep(step);
     clearManualStepInput();
   }));
   const slider = document.getElementById('stepSlider');
@@ -561,19 +737,35 @@ function setupAccountCollapse() {
     btn.setAttribute('aria-expanded', String(!collapsed));
   });
 }
+/* 0-8 点禁止刷步是网页通道（Cloudflare Worker）的限制，本地直连不受影响。
+   因此本地模式下整条提示都隐藏——继续显示只会让人误以为刷了也不生效。
+   顺带把同步模式写到标题副行，这也正是它与网页版的唯一差别。 */
 function updateSyncTip() {
+  const local = !!getLocalStepWongPlugin();
+  const modeEl = document.getElementById('appMode');
+  if (modeEl) modeEl.textContent = local ? '本地直连' : '网页模式';
+
   const tip = document.getElementById('syncTip');
   if (!tip) return;
+  if (local) {
+    tip.classList.add('hidden');
+    tip.classList.remove('blocked');
+    return;
+  }
+  tip.classList.remove('hidden');
   const hour = new Date().getHours();
   const blocked = hour >= 0 && hour < 8;
   tip.classList.toggle('blocked', blocked);
   tip.textContent = blocked
-    ? '当前禁止刷步：凌晨 0 点 - 早上 8 点，刷了也不会更新'
-    : '温馨提示：凌晨 0 点 - 早上 8 点禁止刷步，刷了也不会更新步数';
+    ? '网页通道当前禁止刷步：凌晨 0 点 - 早上 8 点'
+    : '温馨提示：网页通道在凌晨 0 点 - 早上 8 点禁止刷步';
 }
 function setupNavigation() { document.querySelectorAll('.nav-item').forEach((button) => button.addEventListener('click', function () { setActiveTab(this.dataset.tab || 'steps'); })); }
 function setupThemeToggle() { document.getElementById('themeToggle')?.addEventListener('click', toggleTheme); }
-function setupLogControls() { document.getElementById('clearLogBtn')?.addEventListener('click', clearLog); }
+function setupLogControls() {
+  document.getElementById('clearLogBtn')?.addEventListener('click', clearLog);
+  document.getElementById('copyLogBtn')?.addEventListener('click', copyLog);
+}
 function setupHistoryControls() { document.getElementById('clearHistoryBtn')?.addEventListener('click', clearHistory); }
 function setupAccountSelectBinding() {
   document.getElementById('accountSelect')?.addEventListener('change', function () {
@@ -694,17 +886,20 @@ function addHistory(accountRef, steps, success) {
   renderSummary();
 }
 function clearHistory() {
-  if (!confirm('确认清空最近记录吗？')) return;
+  const archivedDays = Object.keys(loadHistoryArchive()).length;
+  const hint = archivedDays ? '（含 ' + archivedDays + ' 天历史归档）' : '';
+  if (!confirm('确认清空最近记录' + hint + '吗？')) return;
   stepHistory = [];
   lastSuccessStep = null;
   localStorage.removeItem(STORAGE_KEYS.history);
+  localStorage.removeItem(STORAGE_KEYS.historyArchive);
   localStorage.removeItem(STORAGE_KEYS.lastSuccessStep);
   updateSliderRange();
   setStep(STEP_LIMITS.min, { persist: false });
   renderHistory();
   renderAccountList();
   renderSummary();
-  appendLog('line', '   · 已清空最近记录');
+  appendLog('line', '   · 已清空最近记录与历史归档');
 }
 function renderBusyState(isBusy, button) {
   submitInFlight = !!isBusy;
@@ -876,8 +1071,60 @@ function setupTutorial() {
   document.getElementById('tutorialOverlay')?.addEventListener('click', (event) => { if (event.target === document.getElementById('tutorialOverlay')) closeTutorial(); });
 }
 
+/* ---------- 版本与更新检查 ----------
+   界面原本没有任何版本标识，"手机里装的到底是哪一版"无从确认。
+   顺带查一次 GitHub Releases，有新版就在日志与页脚提示。 */
+function parseVersion(text) {
+  const match = String(text || '').match(/(\d+)\.(\d+)\.(\d+)/);
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+}
+
+function compareVersion(a, b) {
+  const pa = parseVersion(a);
+  const pb = parseVersion(b);
+  if (!pa || !pb) return 0;
+  for (let i = 0; i < 3; i += 1) {
+    if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  }
+  return 0;
+}
+
+let latestVersion = '';
+
+function renderVersionInfo() {
+  const el = document.getElementById('logFooter');
+  if (!el) return;
+  const mode = getLocalStepWongPlugin() ? '本地直连' : '网页模式';
+  el.textContent = (latestVersion && compareVersion(latestVersion, APP_VERSION) > 0)
+    ? '动动吧 v' + APP_VERSION + ' · ' + mode + ' · 有新版本 v' + latestVersion
+    : '动动吧 v' + APP_VERSION + ' · ' + mode;
+}
+
+async function checkForUpdate() {
+  if (typeof fetch !== 'function') return;
+  try {
+    const response = await fetch(RELEASES_API, {
+      headers: { Accept: 'application/vnd.github+json' },
+      signal: createRequestSignal(8000)
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    const parsed = parseVersion(data && data.tag_name);
+    if (!parsed) return;
+    latestVersion = parsed.join('.');
+    renderVersionInfo();
+    if (compareVersion(latestVersion, APP_VERSION) > 0) {
+      appendLog('info', '发现新版本 v' + latestVersion + '（当前 v' + APP_VERSION + '），可在 GitHub Releases 下载');
+    }
+  } catch {
+    /* 检查更新失败不打扰用户：离线、接口限流都很正常 */
+  }
+}
+
 function init() {
   loadHistory();
+  /* 回填上次会话的日志：这样"上次为什么失败"不必重新复现 */
+  loadPersistedLogs();
   /* 跨天检测要早于 loadStep，否则会用昨天的基准算出今天的上限 */
   const didDailyReset = applyDailyReset({ persist: true, silent: true });
   loadAccounts();
@@ -908,7 +1155,11 @@ function init() {
   applyCooldownState();
   setupTutorial();
   setupPressFeedback();
-  scheduleNextMidnightReset();
+  /* 纯 JS 定时器：页面活着时跨零点自动归零（后台期间的跨天由 ensureFreshDay 兜底） */
+  scheduleMidnightTick();
+  renderVersionInfo();
+  /* 不 await：检查更新是锦上添花，不能拖慢启动，失败也不提示 */
+  checkForUpdate();
 }
 window.useAccount = function useAccount(index) { setActiveAccount(index, { silent: false }); };
 window.renameAccount = renameAccount;

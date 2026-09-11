@@ -505,6 +505,17 @@ img {
   margin-bottom: 14px;
 }
 
+/* 随机 + 4 档绝对步数并排。列窄，需收紧内边距与字号，否则标签会被挤断 */
+.smart-preset-row {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.smart-preset-row .preset-btn {
+  min-height: 46px;
+  padding: 0 2px;
+  font-size: 14px;
+}
+
 .preset-btn, .btn-sm, .clear-btn, .account-action-btn {
   border: 3px solid var(--ink);
   border-radius: 0;
@@ -743,6 +754,18 @@ input[type="range"]:disabled {
   margin-bottom: 10px;
 }
 
+.log-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.log-footer {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .history-list, .account-list {
   display: flex;
   flex-direction: column;
@@ -816,6 +839,20 @@ input[type="range"]:disabled {
   color: var(--muted);
   font-size: 13px;
   text-align: center;
+}
+
+/* 按天分组的归档：今天在最上，历史日在后 */
+.history-day + .history-day {
+  margin-top: 14px;
+}
+
+.history-day-title {
+  margin-bottom: 9px;
+  padding-bottom: 6px;
+  border-bottom: 2px dashed var(--ink-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 /* ---------- accounts ---------- */

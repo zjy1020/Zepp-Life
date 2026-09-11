@@ -20,7 +20,7 @@
         <div class="header-copy">
           <div>
             <h1 class="app-title">动动吧</h1>
-            <span class="app-subtitle">动动吧</span>
+            <span class="app-subtitle" id="appMode">本地直连</span>
           </div>
           <a href="https://github.com/lby0626" target="_blank" rel="noopener" aria-label="GitHub" class="icon-link">
             <img src="static/images/github-fill.png" alt="GitHub" width="18" height="18">
@@ -74,6 +74,10 @@
 
       <div class="preset-row smart-preset-row">
         <button type="button" class="preset-btn" data-step="random">随机</button>
+        <button type="button" class="preset-btn" data-step="3000">3k</button>
+        <button type="button" class="preset-btn" data-step="8000">8k</button>
+        <button type="button" class="preset-btn" data-step="25000">25k</button>
+        <button type="button" class="preset-btn" data-step="50000">50k</button>
       </div>
 
       <div class="slider-container">
@@ -85,7 +89,7 @@
         </div>
       </div>
 
-      <div class="sync-tip" id="syncTip">温馨提示：凌晨 0 点 - 早上 8 点禁止刷步，刷了也不会更新步数</div>
+      <div class="sync-tip hidden" id="syncTip">温馨提示：网页通道在凌晨 0 点 - 早上 8 点禁止刷步</div>
 
       <button type="button" class="submit-btn" id="submitBtn">
         <span class="btn-text">执 行 步 数</span>
@@ -132,13 +136,17 @@
     <div class="tab-panel" id="tab-logs">
       <div class="log-header">
         <span class="section-title">执行日志</span>
-        <button type="button" class="clear-btn" id="clearLogBtn">清空</button>
+        <div class="log-header-actions">
+          <button type="button" class="clear-btn" id="copyLogBtn">复制</button>
+          <button type="button" class="clear-btn" id="clearLogBtn">清空</button>
+        </div>
       </div>
       <div class="log-panel">
         <div class="log-content" id="logContent">
           <div class="log-row"><span class="log-prompt">&gt;</span><span class="log-line">系统就绪，等待执行...</span></div>
         </div>
       </div>
+      <div class="log-footer" id="logFooter">动动吧</div>
     </div>
 
     <nav class="bottom-nav">
@@ -248,7 +256,7 @@ pip install flask requests pycryptodome
 - **接口文档路径**：`docs/zepp-life-api.md`（后续可能不会更新了）
 </script>
 
-  <script src="static/js/motion.js?v=20260911-logs"></script>
-  <script src="static/js/app.js?v=20260911-logs"></script>
+  <script src="static/js/motion.js?v=20260911-improve"></script>
+  <script src="static/js/app.js?v=20260911-improve"></script>
 </body>
 </html>
