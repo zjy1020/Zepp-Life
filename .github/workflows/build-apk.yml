@@ -115,8 +115,39 @@ jobs:
           echo "APP_VERSION=$VERSION versionCode=$CODE"
           grep -nE "versionCode|versionName" android/app/build.gradle
 
+      - name: Restore release keystore
+        run: |
+          set -e
+          if [ -z "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "::error::缺少 KEYSTORE_BASE64 —— 没有它每次构建都会生成新的调试密钥，各版本签名不同、无法覆盖安装"
+            exit 1
+          fi
+          printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          test -s "$RUNNER_TEMP/release.keystore"
+          echo "keystore 已恢复: $(stat -c%s "$RUNNER_TEMP/release.keystore") bytes"
+
+      - name: Patch Android project
+        run: python3 scripts/patch_android.py
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
       - name: Build APK
         run: cd android && ./gradlew assembleDebug
+        env:
+          # Gradle 在配置阶段读取这几个变量，所以构建步骤也要带上
+          KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Show signing certificate fingerprint
+        run: |
+          APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
+          echo "APK: $APK"
+          "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "$APK" || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

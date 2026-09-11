@@ -6,3 +6,8 @@ node_modules/
 android/
 www/
 *.local
+
+# 签名密钥绝不入库（仓库是公开的）
+*.keystore
+*.jks
+release.keystore

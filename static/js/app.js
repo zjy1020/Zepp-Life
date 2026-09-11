@@ -1,7 +1,7 @@
 const WORKER_URL = 'https://stepwong-api.3255962845.workers.dev';
 const STORAGE_KEYS = { accounts: 'stepwong_accounts', history: 'stepwong_history', historyArchive: 'stepwong_history_archive', theme: 'stepwong_theme', tab: 'stepwong_tab', step: 'stepwong_step', lastSuccessStep: 'stepwong_last_success_step', lastResetDate: 'stepwong_last_reset_date', authCache: 'stepwong_auth_cache', lastSubmitAt: 'stepwong_last_submit_at', logs: 'stepwong_logs' };
 /* 当前版本号。升版本时与 Release 的 tag 保持一致，便于在界面里确认装的是哪一版 */
-const APP_VERSION = '1.0.6';
+const APP_VERSION = '1.0.7';
 const RELEASES_API = 'https://api.github.com/repos/zjy1020/Zepp-Life/releases/latest';
 /* 两次提交之间的最小间隔。华米按来源 IP 限流，短窗口内连发多轮即触发 429；
    冷却挡的是误触连点，代价由失败后的无效重试承担。 */
@@ -755,6 +755,7 @@ function setupLogControls() {
   document.getElementById('clearLogBtn')?.addEventListener('click', clearLog);
   document.getElementById('copyLogBtn')?.addEventListener('click', copyLog);
   document.getElementById('checkUpdateBtn')?.addEventListener('click', () => { checkForUpdate({ manual: true }); });
+  document.getElementById('updateBtn')?.addEventListener('click', installUpdate);
 }
 function setupHistoryControls() { document.getElementById('clearHistoryBtn')?.addEventListener('click', clearHistory); }
 function setupAccountSelectBinding() {
@@ -1080,12 +1081,25 @@ function compareVersion(a, b) {
 }
 
 let latestVersion = '';
+/* 新版 APK 的直链，从 release 的 assets 里取。App 内一键更新要用它下载。 */
+let latestApkUrl = '';
 
 /* 检查更新的四种终态 + 进行中。
    之前只做静默自动检查，导致"已是最新"和"根本没查成"在界面上完全一样——
    加手动按钮后必须把状态显式表达出来。 */
 const UPDATE_STATE = { idle: 'idle', checking: 'checking', latest: 'latest', outdated: 'outdated', failed: 'failed' };
 let updateState = UPDATE_STATE.idle;
+
+/* 从 release 响应里挑出 APK 直链。assets 里可能混有其他文件，只认 .apk。 */
+function pickApkAssetUrl(release) {
+  const assets = (release && release.assets) || [];
+  for (const asset of assets) {
+    if (asset && /\.apk$/i.test(String(asset.name || ''))) {
+      return String(asset.browser_download_url || '');
+    }
+  }
+  return '';
+}
 
 function renderVersionInfo() {
   const el = document.getElementById('logFooter');
@@ -1106,6 +1120,9 @@ function renderVersionInfo() {
     btn.disabled = checking;
     btn.textContent = checking ? '检查中…' : '检查更新';
   }
+
+  /* 「立即更新」只在确实有新版本时才出现 */
+  document.getElementById('updateBtn')?.classList.toggle('hidden', updateState !== UPDATE_STATE.outdated);
 }
 
 /* 检查 GitHub Releases 的最新版本。
@@ -1138,11 +1155,12 @@ async function checkForUpdate(options = {}) {
       throw new Error('响应中没有可识别的版本号');
     }
     latestVersion = parsed.join('.');
+    latestApkUrl = pickApkAssetUrl(data);
     updateState = compareVersion(latestVersion, APP_VERSION) > 0 ? UPDATE_STATE.outdated : UPDATE_STATE.latest;
     renderVersionInfo();
 
     if (updateState === UPDATE_STATE.outdated) {
-      appendLog('info', '发现新版本 v' + latestVersion + '（当前 v' + APP_VERSION + '），可在 GitHub Releases 下载');
+      appendLog('info', '发现新版本 v' + latestVersion + '（当前 v' + APP_VERSION + '），点下方「立即更新」可直接安装');
     } else if (manual) {
       appendLog('success', '✔ 已是最新版本 v' + APP_VERSION);
     }
@@ -1150,11 +1168,55 @@ async function checkForUpdate(options = {}) {
   } catch (err) {
     updateState = UPDATE_STATE.failed;
     latestVersion = '';
+    latestApkUrl = '';
     renderVersionInfo();
     if (manual) {
       appendLog('error', '✖ 检查更新失败：' + ((err && err.message) || '网络不可用'));
     }
     return null;
+  }
+}
+
+/* 下载新版并唤起系统安装器。
+   APK 内走原生插件（能自动拉起安装界面）；网页模式没有安装权限，退化为打开下载链接。
+
+   注意：Android 不允许普通应用静默安装，下载完只会跳出系统安装界面，
+   仍需用户点一次「安装」；Android 8+ 首次还要先授权「安装未知应用」。 */
+async function installUpdate() {
+  if (updateState !== UPDATE_STATE.outdated || !latestVersion) return;
+
+  const btn = document.getElementById('updateBtn');
+  const plugin = getLocalStepWongPlugin();
+
+  if (!latestApkUrl) {
+    appendLog('error', '✖ 没找到安装包下载地址，请到 GitHub Releases 手动下载');
+    return;
+  }
+
+  if (!plugin || typeof plugin.installUpdate !== 'function') {
+    appendLog('info', '⟳ 网页模式无法直接安装，已打开下载链接，请下载后手动安装');
+    try { window.open(latestApkUrl, '_blank'); } catch { /* 弹窗被拦截时忽略 */ }
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = '下载中…'; }
+  appendLog('info', '⟳ 正在下载 v' + latestVersion + ' 安装包…');
+
+  try {
+    const result = await plugin.installUpdate({ url: latestApkUrl, version: latestVersion });
+    const size = result && result.size ? '（' + (Number(result.size) / 1048576).toFixed(1) + 'MB）' : '';
+    if (result && result.success) {
+      appendLog('success', '✔ ' + (result.message || '安装包已就绪') + size);
+      appendLog('line', '   · 若系统提示需要「安装未知应用」权限，开启后返回再点一次即可');
+    } else if (result && result.needPermission) {
+      appendLog('info', '⟳ ' + (result.message || '需要先允许「安装未知应用」'));
+    } else {
+      appendLog('error', '✖ ' + ((result && result.message) || '更新失败'));
+    }
+  } catch (err) {
+    appendLog('error', '✖ 更新失败：' + ((err && err.message) || err));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '立即更新'; }
   }
 }
 

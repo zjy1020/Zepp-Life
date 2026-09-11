@@ -1,6 +1,12 @@
 package com.zepplife.steps;
 
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
+
+import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -11,6 +17,8 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -95,6 +103,118 @@ public class StepWongPlugin extends Plugin {
             result.put("log", joinLog(log));
             call.resolve(result);
         });
+    }
+
+    /**
+     * 下载新版 APK 并拉起系统安装器。
+     *
+     * Android 不允许普通应用静默安装，只能把安装包交给系统安装界面由用户确认，
+     * 所以这里做三件事：下载到应用缓存目录、通过 FileProvider 暴露成 content:// URI、
+     * 用 ACTION_VIEW 唤起安装器。Android 8+ 首次还需用户授权「安装未知应用」。
+     */
+    @PluginMethod
+    public void installUpdate(PluginCall call) {
+        final String url = call.getString("url", "");
+        final String version = call.getString("version", "");
+        if (url == null || url.isEmpty()) {
+            call.resolve(installFailure("缺少下载地址"));
+            return;
+        }
+
+        executor.execute(() -> {
+            try {
+                File dir = new File(getContext().getCacheDir(), "updates");
+                if (!dir.exists() && !dir.mkdirs()) {
+                    call.resolve(installFailure("无法创建缓存目录"));
+                    return;
+                }
+                File apk = new File(dir, "dongdongba-update.apk");
+                if (apk.exists() && !apk.delete()) {
+                    call.resolve(installFailure("无法清理上一次的安装包"));
+                    return;
+                }
+
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+                conn.setReadTimeout(120000);
+                conn.setRequestProperty("User-Agent", "DongDongBa");
+                int code = conn.getResponseCode();
+                if (code < 200 || code >= 300) {
+                    call.resolve(installFailure("下载失败：HTTP " + code));
+                    return;
+                }
+
+                long total = 0;
+                try (InputStream in = conn.getInputStream();
+                     FileOutputStream out = new FileOutputStream(apk)) {
+                    byte[] buf = new byte[16384];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        total += n;
+                    }
+                }
+                conn.disconnect();
+
+                if (total < 1024) {
+                    call.resolve(installFailure("下载内容过小（" + total + " 字节），可能不是安装包"));
+                    return;
+                }
+
+                /* Android 8+ 需要用户先允许「安装未知应用」，否则安装器会直接闪退 */
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        && !getContext().getPackageManager().canRequestPackageInstalls()) {
+                    openUnknownSourcesSettings();
+                    JSObject need = new JSObject();
+                    need.put("success", false);
+                    need.put("needPermission", true);
+                    need.put("message", "请先允许本应用「安装未知应用」，开启后返回再点一次「立即更新」");
+                    call.resolve(need);
+                    return;
+                }
+
+                Uri uri = FileProvider.getUriForFile(
+                    getContext(),
+                    getContext().getPackageName() + ".fileprovider",
+                    apk
+                );
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(uri, "application/vnd.android.package-archive");
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        | Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+
+                JSObject result = new JSObject();
+                result.put("success", true);
+                result.put("version", version == null ? "" : version);
+                result.put("size", total);
+                result.put("message", "安装包已下载，请在系统界面点击「安装」");
+                call.resolve(result);
+            } catch (Exception e) {
+                call.resolve(installFailure("更新失败："
+                        + e.getClass().getSimpleName() + "：" + e.getMessage()));
+            }
+        });
+    }
+
+    private static JSObject installFailure(String message) {
+        JSObject r = new JSObject();
+        r.put("success", false);
+        r.put("message", message);
+        return r;
+    }
+
+    /** 跳到本应用的「安装未知应用」授权页。部分 ROM 无此页，失败可忽略。 */
+    private void openUnknownSourcesSettings() {
+        try {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+        } catch (Exception ignored) {
+            /* 忽略：用户可自行到系统设置里开启 */
+        }
     }
 
     private JSObject handleUpdate(String user, String password, int steps,
