@@ -24,14 +24,6 @@ async function encryptLoginData(plainBytes) {
   return new Uint8Array(encrypted);
 }
 
-function randomInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function fakeIP() {
-  return `223.${randomInt(64,117)}.${randomInt(0,255)}.${randomInt(0,255)}`;
-}
-
 function getAccessToken(location) {
   const m = location.match(/access=([^&]+)/);
   return m ? m[1] : null;
@@ -58,17 +50,52 @@ function buildQuery(obj) {
 /**
  * 执行全部同步流程
  */
-async function handleUpdate(user, password, steps) {
+async function handleUpdate(user, password, steps, cachedUserId, cachedAppToken) {
   const log = [];
   const deviceId = crypto.randomUUID();
-  const ipAddr = fakeIP();
   const isPhone = user.startsWith('+86') || !user.includes('@');
 
-  log.push(`初始化 Runner 完成`);
-  log.push(`设备ID:${deviceId} 虚拟IP:${ipAddr}`);
+  log.push(`设备ID:${deviceId}`);
   log.push(`账号类型:${isPhone ? '手机号' : '邮箱'}`);
 
-  // ===== 登录第一步：加密后 POST =====
+  let userId = String(cachedUserId || '').trim();
+  let appToken = String(cachedAppToken || '').trim();
+
+  // 令牌缓存：命中时跳过登录三步，请求量从 4 降到 1。
+  // 被限流的正是登录端点（api-user.zepp.com），跳过它等于不再触碰限流接口。
+  if (userId && appToken) {
+    log.push('命中缓存令牌，跳过登录（本次仅 1 个请求）');
+    const cached = await submitSteps(userId, appToken, steps, log);
+    if (cached.ok) {
+      return { success: true, message: `同步成功！当前步数: ${steps}`, userId, appToken, log: log.join('\n') };
+    }
+    // 缓存令牌可能已失效：不直接失败，回退完整登录重试一次
+    log.push(`缓存令牌提交未通过：${cached.reason}，回退完整登录`);
+  }
+
+  log.push('执行完整登录（共 4 个请求）');
+  let login;
+  try {
+    login = await runLoginFlow(user, password, deviceId, isPhone, log);
+  } catch (err) {
+    // FlowError 是流程内的可预期失败（限流、响应异常等）。
+    // 必须在这里兜住，才能把已经累积的日志一并返回给前端；
+    // 抛到外层只会得到一个空 log。
+    if (err instanceof FlowError) {
+      return { success: false, message: err.message, log: log.join('\n') };
+    }
+    throw err;
+  }
+
+  const submit = await submitSteps(login.userId, login.appToken, steps, log);
+  if (!submit.ok) {
+    return { success: false, message: submit.reason, log: log.join('\n') };
+  }
+  return { success: true, message: `同步成功！当前步数: ${steps}`, userId: login.userId, appToken: login.appToken, log: log.join('\n') };
+}
+
+// 完整登录：加密登录 -> login_token -> app_token。任何一步被限流都立刻中止并说明原因。
+async function runLoginFlow(user, password, deviceId, isPhone, log) {
   const loginData = {
     'emailOrPhone': user,
     'password': password,
@@ -94,27 +121,25 @@ async function handleUpdate(user, password, steps) {
     'hm-privacy-ceip': 'false',
   };
 
-  let r1 = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const resp = await fetch('https://api-user.zepp.com/v2/registrations/tokens', {
-      method: 'POST',
-      headers: headers1,
-      body: encrypted,
-      redirect: 'manual',
-    });
-    if (resp.status === 303) { r1 = resp; break; }
-    if (resp.status === 429) {
-      log.push(`v2登录限流(429)，第${attempt + 1}次重试`);
-      continue;
-    }
-    log.push(`v2登录异常，status: ${resp.status}`);
-    const text = await resp.text();
-    log.push(`响应片段: ${text.slice(0, 120)}`);
-    return { success: false, message: '登录第一步失败', log: log.join('\n') };
-  }
+  // 原实现在 429 上做零延迟热重试：从已经枯竭的配额里再抢一次，
+  // 只会延长限流窗口，且把「被限流」误报成「获取 accessToken 失败」。
+  // 现在改为直接中止，并给出可据此行动的原因。
+  const r1 = await fetch('https://api-user.zepp.com/v2/registrations/tokens', {
+    method: 'POST',
+    headers: headers1,
+    body: encrypted,
+    redirect: 'manual',
+  });
 
-  if (!r1) {
-    return { success: false, message: '登录失败，未获取重定向', log: log.join('\n') };
+  if (r1.status === 429) {
+    log.push('登录第一步被限流（HTTP 429）');
+    throw new FlowError(rateLimitedMessage('登录', r1));
+  }
+  if (r1.status !== 303) {
+    const text = await r1.text();
+    log.push(`v2登录异常，status: ${r1.status}`);
+    log.push(`响应片段: ${text.slice(0, 120)}`);
+    throw new FlowError(`登录第一步失败（HTTP ${r1.status}）`);
   }
 
   const location = r1.headers.get('Location');
@@ -122,7 +147,7 @@ async function handleUpdate(user, password, steps) {
   if (!code) {
     log.push(`Location头: ${location}`);
     log.push(`状态码: ${r1.status}`);
-    return { success: false, message: '获取 accessToken 失败', log: log.join('\n') };
+    throw new FlowError('登录第一步响应中缺少 accessToken');
   }
   log.push('登录第一步成功，Location 解析完成');
 
@@ -171,21 +196,25 @@ async function handleUpdate(user, password, steps) {
     body: new URLSearchParams(data2).toString(),
   });
 
+  if (r2.status === 429) {
+    log.push('登录第二步被限流（HTTP 429）');
+    throw new FlowError(rateLimitedMessage('登录', r2));
+  }
   if (r2.status !== 200) {
     const text = await r2.text();
     log.push(`获取login_token失败，HTTP状态码: ${r2.status}`);
     log.push(`响应内容: ${text.slice(0, 200)}`);
-    return { success: false, message: '登录第二步失败', log: log.join('\n') };
+    throw new FlowError(`登录第二步失败（HTTP ${r2.status}）`);
   }
 
   let r2json;
   try { r2json = await r2.json(); }
   catch {
-    return { success: false, message: '解析登录响应 JSON 失败', log: log.join('\n') };
+    throw new FlowError('登录第二步失败：响应无法解析');
   }
 
   if (!r2json.token_info) {
-    return { success: false, message: '响应缺少 token_info 字段', log: log.join('\n') };
+    throw new FlowError('登录第二步失败：响应缺少 token_info');
   }
 
   const loginToken = r2json.token_info.login_token;
@@ -197,11 +226,35 @@ async function handleUpdate(user, password, steps) {
   const r3 = await fetch(url3, {
     headers: { 'User-Agent': 'MiFit/5.3.0 (iPhone; iOS 14.7.1; Scale/3.00)' },
   });
-  const r3json = await r3.json();
+
+  if (r3.status === 429) {
+    log.push('获取 app_token 被限流（HTTP 429）');
+    throw new FlowError(rateLimitedMessage('获取 app_token', r3));
+  }
+  if (r3.status !== 200) {
+    const text = await r3.text();
+    log.push(`获取app_token失败，HTTP状态码: ${r3.status}`);
+    log.push(`响应内容: ${text.slice(0, 200)}`);
+    throw new FlowError(`获取 app_token 失败（HTTP ${r3.status}）`);
+  }
+
+  let r3json;
+  try { r3json = await r3.json(); }
+  catch {
+    throw new FlowError('获取 app_token 失败：响应无法解析');
+  }
+  if (!r3json.token_info) {
+    throw new FlowError('获取 app_token 失败：响应缺少 token_info');
+  }
+
   const appToken = r3json.token_info.app_token;
   log.push('app_token 获取成功');
 
-  // ===== 提交步数 =====
+  return { userId, appToken };
+}
+
+// 提交步数。返回结构化结果，由调用方决定是否回退完整登录。
+async function submitSteps(userId, appToken, steps, log) {
   const today = getToday();
   const step = String(steps);
 
@@ -221,6 +274,11 @@ async function handleUpdate(user, password, steps) {
     body: postData,
   });
 
+  if (r4.status === 429) {
+    log.push('提交步数被限流（HTTP 429）');
+    return { ok: false, reason: rateLimitedMessage('提交步数', r4) };
+  }
+
   // 判定真实成败：不能只看有没有响应。
   // 原实现无条件返回 success=true，导致提交失败也被记成"同步成功"。
   let r4json;
@@ -228,7 +286,7 @@ async function handleUpdate(user, password, steps) {
     r4json = await r4.json();
   } catch {
     log.push(`同步响应解析失败，HTTP状态码: ${r4.status}`);
-    return { success: false, message: '提交步数失败：响应无法解析', log: log.join('\n') };
+    return { ok: false, reason: `提交步数失败：响应无法解析（HTTP ${r4.status}）` };
   }
 
   const message = r4json.message || '';
@@ -237,11 +295,31 @@ async function handleUpdate(user, password, steps) {
   const verdict = judgeStepSubmit(r4.status, message);
   if (!verdict.ok) {
     log.push(`提交被服务端拒绝：${verdict.reason}`);
-    return { success: false, message: `同步失败：${verdict.reason}`, log: log.join('\n') };
+    return { ok: false, reason: `同步失败：${verdict.reason}` };
   }
 
-  return { success: true, message: `同步成功！当前步数: ${step}`, log: log.join('\n') };
+  return { ok: true, reason: '' };
 }
+
+// 把 429 翻译成用户能据此行动的话，并带上服务端建议的等待时间。
+function rateLimitedMessage(stage, response) {
+  const waitSeconds = retryAfterSeconds(response);
+  let text = `${stage}被限流（HTTP 429）`;
+  if (waitSeconds > 0) {
+    text += `，服务端建议等待 ${waitSeconds} 秒`;
+  }
+  text += '；请稍后重试，或切换网络（飞行模式重拨）后重试';
+  return text;
+}
+
+function retryAfterSeconds(response) {
+  const value = response.headers.get('Retry-After');
+  if (!value) return -1;
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isNaN(parsed) ? -1 : parsed;
+}
+
+class FlowError extends Error {}
 
 /**
  * 判定步数提交是否真正成功。
@@ -292,7 +370,7 @@ export default {
     if (request.method === 'POST' && url.pathname === '/api/update') {
       try {
         const body = await request.json();
-        const { user, password, steps: rawSteps } = body;
+        const { user, password, steps: rawSteps, userId: cachedUserId, appToken: cachedAppToken } = body;
 
         if (!user || !password) {
           return new Response(
@@ -309,7 +387,7 @@ export default {
           );
         }
 
-        const result = await handleUpdate(user, password, steps);
+        const result = await handleUpdate(user, password, steps, cachedUserId, cachedAppToken);
         return new Response(
           JSON.stringify(result),
           { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }

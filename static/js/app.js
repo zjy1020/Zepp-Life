@@ -1,5 +1,12 @@
 const WORKER_URL = 'https://stepwong-api.3255962845.workers.dev';
-const STORAGE_KEYS = { accounts: 'stepwong_accounts', history: 'stepwong_history', theme: 'stepwong_theme', tab: 'stepwong_tab', step: 'stepwong_step', lastSuccessStep: 'stepwong_last_success_step', lastResetDate: 'stepwong_last_reset_date', schedules: 'stepwong_schedules' };
+const STORAGE_KEYS = { accounts: 'stepwong_accounts', history: 'stepwong_history', theme: 'stepwong_theme', tab: 'stepwong_tab', step: 'stepwong_step', lastSuccessStep: 'stepwong_last_success_step', lastResetDate: 'stepwong_last_reset_date', schedules: 'stepwong_schedules', authCache: 'stepwong_auth_cache', lastSubmitAt: 'stepwong_last_submit_at' };
+/* 两次提交之间的最小间隔。华米按来源 IP 限流，短窗口内连发多轮即触发 429；
+   冷却挡的是误触连点，代价由失败后的无效重试承担。 */
+const SUBMIT_COOLDOWN_MS = 60000;
+/* 令牌缓存有效期。华米 app_token 的真实 TTL 未经实测，12 小时是保守取值：
+   同一天内复用，跨天自然失效走完整登录。即使提前失效也不会卡住——
+   插件在提交失败时会回退完整登录，前端也会清掉这份缓存。 */
+const AUTH_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const THEME_ICONS = {
   light: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
   dark: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>',
@@ -385,6 +392,68 @@ function createRequestSignal(timeoutMs) {
 function getLocalStepWongPlugin() {
   try { return window.Capacitor?.Plugins?.StepWong || null; } catch { return null; }
 }
+
+/* ---------- 令牌缓存 ----------
+   完整登录链是 4 个请求，其中前 3 个只产出可复用的令牌。
+   缓存后每次提交只需 1 个请求，且不再触碰会被限流的登录端点
+   （api-user.zepp.com/v2/registrations/tokens）。 */
+function loadAuthCache() {
+  const cache = readJSON(STORAGE_KEYS.authCache, {});
+  return cache && typeof cache === 'object' ? cache : {};
+}
+function getCachedAuth(user) {
+  if (!user) return null;
+  const entry = loadAuthCache()[String(user)];
+  if (!entry || !entry.userId || !entry.appToken) return null;
+  const savedAt = Number(entry.savedAt) || 0;
+  if (!savedAt || Date.now() - savedAt > AUTH_CACHE_TTL_MS) return null;
+  return entry;
+}
+function saveCachedAuth(user, userId, appToken) {
+  if (!user || !userId || !appToken) return;
+  const cache = loadAuthCache();
+  cache[String(user)] = { userId: String(userId), appToken: String(appToken), savedAt: Date.now() };
+  writeJSON(STORAGE_KEYS.authCache, cache);
+}
+function clearCachedAuth(user) {
+  if (!user) return;
+  const cache = loadAuthCache();
+  if (!cache[String(user)]) return;
+  delete cache[String(user)];
+  writeJSON(STORAGE_KEYS.authCache, cache);
+}
+
+/* ---------- 提交冷却 ---------- */
+let cooldownTimer = null;
+let submitInFlight = false;
+
+function getCooldownRemaining() {
+  const last = Number(localStorage.getItem(STORAGE_KEYS.lastSubmitAt) || 0);
+  if (!last) return 0;
+  return Math.max(0, SUBMIT_COOLDOWN_MS - (Date.now() - last));
+}
+
+function applyCooldownState() {
+  const btn = document.getElementById('submitBtn');
+  const text = btn && typeof btn.querySelector === 'function' ? btn.querySelector('.btn-text') : null;
+  const remaining = getCooldownRemaining();
+  if (remaining > 0) {
+    if (btn) btn.disabled = true;
+    if (text) text.textContent = '冷却 ' + Math.ceil(remaining / 1000) + 's';
+    if (!cooldownTimer && typeof setInterval === 'function') {
+      cooldownTimer = setInterval(applyCooldownState, 500);
+    }
+    return;
+  }
+  if (cooldownTimer && typeof clearInterval === 'function') {
+    clearInterval(cooldownTimer);
+  }
+  cooldownTimer = null;
+  if (submitInFlight) return;
+  if (btn) btn.disabled = false;
+  if (text) text.textContent = '执 行 步 数';
+}
+
 function updateBusyState(isBusy, button) {
   const submitBtn = button || document.getElementById('submitBtn');
   const slider = document.getElementById('stepSlider');
@@ -631,9 +700,16 @@ function clearHistory() {
   appendLog('line', '   · 已清空最近记录');
 }
 function renderBusyState(isBusy, button) {
+  submitInFlight = !!isBusy;
   updateBusyState(isBusy, button);
-  const text = button?.querySelector('.btn-text');
-  if (text) text.textContent = isBusy ? '执 行 中...' : '执 行 步 数';
+  const submitBtn = button || document.getElementById('submitBtn');
+  const text = submitBtn && typeof submitBtn.querySelector === 'function' ? submitBtn.querySelector('.btn-text') : null;
+  if (isBusy) {
+    if (text) text.textContent = '执 行 中...';
+    return;
+  }
+  /* 结束忙碌后不能直接恢复按钮文字：可能仍落在冷却窗口内 */
+  applyCooldownState();
 }
 function setupAddAccountForm() {
   const addBtn = document.getElementById('addAccountBtn');
@@ -658,6 +734,13 @@ function setupAddAccountForm() {
   passInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); submitAccount(); } });
 }
 async function submitStepUpdate(button) {
+  /* 冷却期内直接拦截。被限流的是登录端点，连发只会延长限流窗口 */
+  const cooldown = getCooldownRemaining();
+  if (cooldown > 0) {
+    appendLog('line', '   · 距上次提交不足 ' + Math.round(SUBMIT_COOLDOWN_MS / 1000) + ' 秒，请再等 ' + Math.ceil(cooldown / 1000) + ' 秒');
+    applyCooldownState();
+    return;
+  }
   hideResult();
   /* 提交前再查一次跨天：App 一直挂着跨过 0 点时，需要就地重置而不是沿用昨天的基准 */
   if (ensureFreshDay()) {
@@ -671,30 +754,64 @@ async function submitStepUpdate(button) {
   const previousStep = currentStep;
   if (!confirm('当前账号：' + account.name + '，确认刷步？')) { renderBusyState(false, button); return; }
   const localPlugin = getLocalStepWongPlugin();
+  const cached = getCachedAuth(account.user);
   appendLog('info', localPlugin ? '⟳ 正在通过 APK 内置同步器提交...' : '⟳ 正在提交同步请求...');
   appendLog('line', '   · 账号: ' + account.name);
   appendLog('line', '   · 步数: ' + Number(currentStep).toLocaleString());
   if (localPlugin) appendLog('line', '   · 同步方式: 本地模式（无需 Cloudflare Worker）');
+  appendLog('line', '   · 令牌缓存: ' + (cached ? '命中，本次仅 1 个请求' : '无，走完整登录 4 个请求'));
   renderBusyState(true, button);
   let data = null;
   try {
     if (localPlugin) {
-      const result = await localPlugin.updateSteps({ user: account.user, password: account.password, steps: String(currentStep) });
-      data = (result && typeof result === 'object') ? { success: !!result.success, message: result.message || '', log: result.log || '' } : { success: false, message: '本地同步器返回异常', log: '' };
+      const result = await localPlugin.updateSteps({
+        user: account.user,
+        password: account.password,
+        steps: String(currentStep),
+        userId: cached ? cached.userId : '',
+        appToken: cached ? cached.appToken : ''
+      });
+      data = (result && typeof result === 'object')
+        ? { success: !!result.success, message: result.message || '', log: result.log || '', userId: result.userId || '', appToken: result.appToken || '' }
+        : { success: false, message: '本地同步器返回异常', log: '' };
     } else {
-      const response = await fetch(WORKER_URL + '/api/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: account.user, password: account.password, steps: currentStep }), signal: createRequestSignal(15000) });
+      const response = await fetch(WORKER_URL + '/api/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user: account.user,
+          password: account.password,
+          steps: currentStep,
+          userId: cached ? cached.userId : '',
+          appToken: cached ? cached.appToken : ''
+        }),
+        signal: createRequestSignal(15000)
+      });
       const text = await response.text();
       try { data = JSON.parse(text); } catch { throw new Error('服务器返回了非JSON数据 (状态:' + response.status + '): ' + text.slice(0, 100)); }
     }
-    if (data.success) { showResult(true, '同步成功！步数: ' + Number(currentStep).toLocaleString()); appendLog('success', '✔ ' + (data.message || '同步成功')); addHistory(account, currentStep, true); }
-    else { showResult(false, data.message || '同步失败'); appendLog('error', '✖ ' + (data.message || '同步失败')); addHistory(account, currentStep, false); }
+    /* 先铺细节日志，再给结论——否则用户会先看到错误摘要、后看到解释它的原因 */
     if (data.log) data.log.split('\n').forEach((line) => { const trimmed = line.trim(); if (trimmed) appendLog('line', '   ' + trimmed); });
+    if (data.success) {
+      saveCachedAuth(account.user, data.userId, data.appToken);
+      showResult(true, '同步成功！步数: ' + Number(currentStep).toLocaleString());
+      appendLog('success', '✔ ' + (data.message || '同步成功'));
+      addHistory(account, currentStep, true);
+    } else {
+      /* 插件在缓存令牌被拒时已内部回退；这里再清一次，确保下次从干净状态开始 */
+      if (cached) clearCachedAuth(account.user);
+      showResult(false, data.message || '同步失败');
+      appendLog('error', '✖ ' + (data.message || '同步失败'));
+      addHistory(account, currentStep, false);
+    }
   } catch (err) {
     showResult(false, localPlugin ? ('本地同步失败: ' + (err?.message || err)) : '网络错误: 无法连接到服务器');
     appendLog('error', '✖ ' + (localPlugin ? ('本地同步失败: ' + (err?.message || err)) : ('请求失败: ' + (err?.message || err))));
     addHistory(account, currentStep, false);
   } finally {
     setStep(previousStep, { persist: false });
+    /* 无论成败都进入冷却：失败多半就是被限流，立刻重试只会更糟 */
+    localStorage.setItem(STORAGE_KEYS.lastSubmitAt, String(Date.now()));
     renderBusyState(false, button);
   }
 }
@@ -780,6 +897,8 @@ function init() {
   setupAccountManagePanel();
   updateSyncTip();
   setupSubmitButton();
+  /* 重开页面时若仍在冷却窗口内，需恢复倒计时，否则按钮会短暂可点 */
+  applyCooldownState();
   setupTutorial();
   setupPressFeedback();
   scheduleNextMidnightReset();

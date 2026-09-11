@@ -96,7 +96,8 @@ test('APK 本地插件存在时优先本地同步，不请求 Worker', async () 
 
   await app.runSubmit();
 
-  assert.deepEqual(pluginCalls, [{ user: 'test@example.com', password: 'secret', steps: '5000' }]);
+  // 无缓存时 userId/appToken 传空串，插件会走完整登录
+  assert.deepEqual(pluginCalls, [{ user: 'test@example.com', password: 'secret', steps: '5000', userId: '', appToken: '' }]);
   assert.equal(app.fetchCalls.length, 0);
   assert.ok(app.elements.get('resultMsg').textContent.includes('同步成功！步数:'));
   assert.equal(app.history.length, 1);

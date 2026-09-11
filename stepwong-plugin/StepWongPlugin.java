@@ -18,7 +18,6 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -48,7 +47,6 @@ public class StepWongPlugin extends Plugin {
     private static final int READ_TIMEOUT_MS = 20000;
     private static final int STEP_MIN = 1;
     private static final int STEP_MAX = 98800;
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -57,6 +55,9 @@ public class StepWongPlugin extends Plugin {
         final String user = call.getString("user", "").trim();
         final String password = call.getString("password", "").trim();
         final String rawSteps = call.getString("steps", "").trim();
+        /* 可选的令牌缓存：命中时跳过登录三步，请求量从 4 降到 1 */
+        final String cachedUserId = call.getString("userId", "");
+        final String cachedAppToken = call.getString("appToken", "");
         final List<String> log = new ArrayList<>();
 
         if (user.isEmpty() || password.isEmpty()) {
@@ -83,7 +84,10 @@ public class StepWongPlugin extends Plugin {
         executor.execute(() -> {
             JSObject result;
             try {
-                result = handleUpdate(user, password, steps, log);
+                result = handleUpdate(user, password, steps, cachedUserId, cachedAppToken, log);
+            } catch (FlowException e) {
+                /* 流程内的可预期失败（限流、响应异常等）：message 已是面向用户的说明 */
+                result = failure(e.getMessage(), log);
             } catch (Exception e) {
                 log.add("异常: " + e.getClass().getSimpleName() + ": " + e.getMessage());
                 result = failure(String.valueOf(e.getMessage()), log);
@@ -93,15 +97,42 @@ public class StepWongPlugin extends Plugin {
         });
     }
 
-    private JSObject handleUpdate(String user, String password, int steps, List<String> log) throws Exception {
+    private JSObject handleUpdate(String user, String password, int steps,
+                                  String cachedUserId, String cachedAppToken,
+                                  List<String> log) throws Exception {
         final String deviceId = UUID.randomUUID().toString();
-        final String ipAddr = fakeIP();
         final boolean isPhone = user.startsWith("+86") || !user.contains("@");
-        log.add("初始化 Runner 完成");
-        log.add("设备ID:" + deviceId + " 虚拟IP:" + ipAddr);
+        log.add("设备ID:" + deviceId);
         log.add("账号类型:" + (isPhone ? "手机号" : "邮箱"));
 
-        // ===== 登录第一步：加密后 POST，手动读取重定向 =====
+        String userId = cachedUserId == null ? "" : cachedUserId.trim();
+        String appToken = cachedAppToken == null ? "" : cachedAppToken.trim();
+
+        /* 令牌缓存：命中时跳过登录三步，请求量从 4 降到 1。
+           被限流的正是登录端点（api-user.zepp.com），跳过它等于不再触碰限流接口。 */
+        if (!userId.isEmpty() && !appToken.isEmpty()) {
+            log.add("命中缓存令牌，跳过登录（本次仅 1 个请求）");
+            SubmitOutcome cached = submitSteps(userId, appToken, steps, log);
+            if (cached.ok) {
+                return success(steps, userId, appToken);
+            }
+            /* 缓存令牌可能已失效：不直接失败，回退完整登录重试一次 */
+            log.add("缓存令牌提交未通过：" + cached.reason + "，回退完整登录");
+        }
+
+        log.add("执行完整登录（共 4 个请求）");
+        LoginToken login = runLoginFlow(user, password, deviceId, isPhone, log);
+
+        SubmitOutcome submit = submitSteps(login.userId, login.appToken, steps, log);
+        if (!submit.ok) {
+            return failure(submit.reason, log);
+        }
+        return success(steps, login.userId, login.appToken);
+    }
+
+    /** 完整登录：加密登录 -> login_token -> app_token。任何一步被限流都立刻中止并说明原因。 */
+    private LoginToken runLoginFlow(String user, String password, String deviceId,
+                                    boolean isPhone, List<String> log) throws Exception {
         Map<String, String> loginData = new LinkedHashMap<>();
         loginData.put("emailOrPhone", user);
         loginData.put("password", password);
@@ -124,23 +155,19 @@ public class StepWongPlugin extends Plugin {
         headers1.put("x-hm-ekv", "1");
         headers1.put("hm-privacy-ceip", "false");
 
-        HttpResponse r1 = null;
-        for (int attempt = 0; attempt < 2; attempt++) {
-            r1 = httpRequest("POST", "https://api-user.zepp.com/v2/registrations/tokens", headers1, encrypted, false);
-            if (r1.status == 303) {
-                break;
-            }
-            if (r1.status == 429) {
-                log.add("v2登录限流(429)，第" + (attempt + 1) + "次重试");
-                continue;
-            }
+        /* 原实现在 429 上做零延迟热重试：从已经枯竭的配额里再抢一次，
+           只会延长限流窗口，且把「被限流」误报成「获取 accessToken 失败」。
+           现在改为直接中止，并给出可据此行动的原因。 */
+        HttpResponse r1 = httpRequest("POST", "https://api-user.zepp.com/v2/registrations/tokens", headers1, encrypted, false);
+
+        if (r1.status == 429) {
+            log.add("登录第一步被限流（HTTP 429）");
+            throw new FlowException(rateLimitedMessage("登录", r1));
+        }
+        if (r1.status != 303) {
             log.add("v2登录异常，status: " + r1.status);
             log.add("响应片段: " + r1.text(120));
-            return failure("登录第一步失败", log);
-        }
-
-        if (r1 == null) {
-            return failure("登录失败，未获取重定向", log);
+            throw new FlowException("登录第一步失败（HTTP " + r1.status + "）");
         }
 
         String location = r1.header("Location");
@@ -148,11 +175,10 @@ public class StepWongPlugin extends Plugin {
         if (code == null) {
             log.add("Location头: " + location);
             log.add("状态码: " + r1.status);
-            return failure("获取 accessToken 失败", log);
+            throw new FlowException("登录第一步响应中缺少 accessToken");
         }
         log.add("登录第一步成功，Location 解析完成");
 
-        // ===== 登录第二步：获取 login_token =====
         Map<String, String> headers2 = new LinkedHashMap<>();
         headers2.put("app_name", "com.xiaomi.hm.health");
         headers2.put("x-request-id", UUID.randomUUID().toString());
@@ -197,16 +223,20 @@ public class StepWongPlugin extends Plugin {
             true
         );
 
+        if (r2.status == 429) {
+            log.add("登录第二步被限流（HTTP 429）");
+            throw new FlowException(rateLimitedMessage("登录", r2));
+        }
         if (r2.status != 200) {
             log.add("获取login_token失败，HTTP状态码: " + r2.status);
             log.add("响应内容: " + r2.text(200));
-            return failure("登录第二步失败", log);
+            throw new FlowException("登录第二步失败（HTTP " + r2.status + "）");
         }
 
         JSONObject r2json = parseJson(r2);
         if (!r2json.has("token_info")) {
             log.add("响应缺少 token_info 字段: " + r2.text(200));
-            return failure("登录第二步失败", log);
+            throw new FlowException("登录第二步失败：响应缺少 token_info");
         }
 
         JSONObject tokenInfo2 = r2json.getJSONObject("token_info");
@@ -214,7 +244,6 @@ public class StepWongPlugin extends Plugin {
         String userId = tokenInfo2.getString("user_id");
         log.add("登录第二步成功，login_token 与 userid 获取完成");
 
-        // ===== 获取 app_token =====
         String url3 = "https://account-cn.huami.com/v1/client/app_tokens?app_name=com.xiaomi.hm.health"
             + "&dn=api-user.huami.com%2Capi-mifit.huami.com%2Capp-analytics.huami.com"
             + "&login_token=" + loginToken;
@@ -222,21 +251,29 @@ public class StepWongPlugin extends Plugin {
         headers3.put("User-Agent", "MiFit/5.3.0 (iPhone; iOS 14.7.1; Scale/3.00)");
 
         HttpResponse r3 = httpRequest("GET", url3, headers3, null, true);
+        if (r3.status == 429) {
+            log.add("获取 app_token 被限流（HTTP 429）");
+            throw new FlowException(rateLimitedMessage("获取 app_token", r3));
+        }
         if (r3.status != 200) {
             log.add("获取app_token失败，HTTP状态码: " + r3.status);
             log.add("响应内容: " + r3.text(200));
-            return failure("获取 app_token 失败", log);
+            throw new FlowException("获取 app_token 失败（HTTP " + r3.status + "）");
         }
 
         JSONObject r3json = parseJson(r3);
         if (!r3json.has("token_info")) {
             log.add("app_tokens 响应缺少 token_info: " + r3.text(200));
-            return failure("获取 app_token 失败", log);
+            throw new FlowException("获取 app_token 失败：响应缺少 token_info");
         }
         String appToken = r3json.getJSONObject("token_info").getString("app_token");
         log.add("app_token 获取成功");
 
-        // ===== 提交步数 =====
+        return new LoginToken(userId, appToken);
+    }
+
+    /** 提交步数。返回结构化结果，由调用方决定是否回退完整登录。 */
+    private SubmitOutcome submitSteps(String userId, String appToken, int steps, List<String> log) throws Exception {
         String today = getToday();
         String step = String.valueOf(steps);
         String dataJson = loadDataJsonTemplate().replace("2021-08-07", today);
@@ -261,16 +298,21 @@ public class StepWongPlugin extends Plugin {
             true
         );
 
-        // 判定真实成败：不能只看有没有响应。
-        // 原实现无条件返回 success=true，导致提交失败也被记成"同步成功"，
-        // 进而写入成功记录、推进步数基准——这是"记录对不上"的根因。
+        if (r4.status == 429) {
+            log.add("提交步数被限流（HTTP 429）");
+            return new SubmitOutcome(false, rateLimitedMessage("提交步数", r4));
+        }
+
+        /* 判定真实成败：不能只看有没有响应。
+           原实现无条件返回 success=true，导致提交失败也被记成"同步成功"，
+           进而写入成功记录、推进步数基准——这是"记录对不上"的根因。 */
         JSONObject r4json;
         try {
             r4json = parseJson(r4);
         } catch (Exception e) {
             log.add("同步响应解析失败，HTTP状态码: " + r4.status);
             log.add("响应片段: " + r4.text(200));
-            return failure("提交步数失败：响应无法解析", log);
+            return new SubmitOutcome(false, "提交步数失败：响应无法解析（HTTP " + r4.status + "）");
         }
 
         String message = r4json.optString("message", "");
@@ -279,13 +321,68 @@ public class StepWongPlugin extends Plugin {
         StepSubmitVerdict verdict = judgeStepSubmit(r4.status, message);
         if (!verdict.ok) {
             log.add("提交被服务端拒绝：" + verdict.reason);
-            return failure("同步失败：" + verdict.reason, log);
+            return new SubmitOutcome(false, "同步失败：" + verdict.reason);
         }
+        return new SubmitOutcome(true, "");
+    }
 
+    /** 把 429 翻译成用户能据此行动的话，并带上服务端建议的等待时间。 */
+    private static String rateLimitedMessage(String stage, HttpResponse response) {
+        long waitSeconds = retryAfterSeconds(response);
+        StringBuilder sb = new StringBuilder(stage + "被限流（HTTP 429）");
+        if (waitSeconds > 0) {
+            sb.append("，服务端建议等待 ").append(waitSeconds).append(" 秒");
+        }
+        sb.append("；请稍后重试，或切换网络（飞行模式重拨）后重试");
+        return sb.toString();
+    }
+
+    private static long retryAfterSeconds(HttpResponse response) {
+        String value = response.header("Retry-After");
+        if (value == null) {
+            return -1;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private static JSObject success(int steps, String userId, String appToken) {
         JSObject result = new JSObject();
         result.put("success", true);
-        result.put("message", "同步成功！当前步数: " + step);
+        result.put("message", "同步成功！当前步数: " + steps);
+        /* 回传令牌，前端据此缓存；下次提交可跳过登录三步 */
+        result.put("userId", userId == null ? "" : userId);
+        result.put("appToken", appToken == null ? "" : appToken);
         return result;
+    }
+
+    private static class LoginToken {
+        final String userId;
+        final String appToken;
+
+        LoginToken(String userId, String appToken) {
+            this.userId = userId;
+            this.appToken = appToken;
+        }
+    }
+
+    private static class SubmitOutcome {
+        final boolean ok;
+        final String reason;
+
+        SubmitOutcome(boolean ok, String reason) {
+            this.ok = ok;
+            this.reason = reason;
+        }
+    }
+
+    private static class FlowException extends Exception {
+        FlowException(String message) {
+            super(message);
+        }
     }
 
     /**
@@ -395,14 +492,6 @@ public class StepWongPlugin extends Plugin {
 
     private static String getToday() {
         return new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
-    }
-
-    private static String fakeIP() {
-        return "223." + randomInt(64, 117) + "." + randomInt(0, 255) + "." + randomInt(0, 255);
-    }
-
-    private static int randomInt(int min, int max) {
-        return min + RANDOM.nextInt(max - min + 1);
     }
 
     private String loadDataJsonTemplate() throws IOException {
