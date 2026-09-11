@@ -61,6 +61,7 @@ function createHarness({ localPlugin, storageSeed, fetchImpl } = {}) {
   };
   const storage = new Map(Object.entries(storageSeed || {}));
   const pendingTimers = [];
+  const pendingIntervals = [];
 
   const context = vm.createContext({
     console,
@@ -81,16 +82,20 @@ function createHarness({ localPlugin, storageSeed, fetchImpl } = {}) {
       removeItem(key) { storage.delete(key); },
       setItem(key, value) { storage.set(key, String(value)); }
     },
-    /* 定时器收集起来由测试主动 flush，避免真等待，也避免进程挂住 */
-    setTimeout: (fn) => { pendingTimers.push(fn); return pendingTimers.length; },
-    clearTimeout: () => {},
-    setInterval: () => 0,
-    clearInterval: () => {}
-  });
-  context.window = context;
-  if (localPlugin) {
-    context.Capacitor = { Plugins: { StepWong: { updateSteps: async () => ({ success: true, message: '', log: '' }) } } };
-  }
+      /* 定时器收集起来由测试主动 flush，避免真等待，也避免进程挂住 */
+      setTimeout: (fn) => { pendingTimers.push(fn); return pendingTimers.length; },
+      clearTimeout: () => {},
+      setInterval: (fn) => { pendingIntervals.push(fn); return pendingIntervals.length; },
+      clearInterval: (id) => { if (id > 0) pendingIntervals[id - 1] = null; }
+    });
+    context.window = context;
+    if (localPlugin) {
+      /* 传对象时用它当插件（便于注入 getUpdateProgress 等能力），传 true 用默认桩 */
+      const plugin = (typeof localPlugin === 'object')
+        ? localPlugin
+        : { updateSteps: async () => ({ success: true, message: '', log: '' }) };
+      context.Capacitor = { Plugins: { StepWong: plugin } };
+    }
 
   const appPath = path.join(__dirname, '..', 'static', 'js', 'app.js');
   vm.runInContext(fs.readFileSync(appPath, 'utf8'), context, { filename: appPath });
@@ -104,9 +109,13 @@ function createHarness({ localPlugin, storageSeed, fetchImpl } = {}) {
       const raw = storage.get(key);
       return raw === undefined ? fallback : JSON.parse(raw);
     },
-    flushTimers() { const list = pendingTimers.splice(0); list.forEach((fn) => fn()); }
-  };
-}
+      flushTimers() { const list = pendingTimers.splice(0); list.forEach((fn) => fn()); },
+      async flushIntervals() {
+        for (const fn of pendingIntervals.filter(Boolean)) await fn();
+      },
+      intervalCount() { return pendingIntervals.filter(Boolean).length; }
+    };
+  }
 
 /* ---------- 3 时段提示与模式指示 ---------- */
 
@@ -373,4 +382,128 @@ test('检查进行中重复触发会被忽略，只发一次请求', async () =>
 
   release(releaseResponse('动动吧-v1.0.0'));
   await first;
+});
+
+/* ---------- 一键更新的下载进度 ---------- */
+
+const MB = 1048576;
+
+/* 装好一个可测的插件：installUpdate 挂着不 resolve，好让轮询有机会跑；
+   getUpdateProgress 依次吐出预设样本，最后一条会被反复复用。 */
+function updatePlugin(samples, { withProgress = true } = {}) {
+  let i = 0;
+  const plugin = {
+    updateSteps: async () => ({ success: true, message: '', log: '' }),
+    installUpdate: () => new Promise((resolve) => { plugin.__resolve = resolve; })
+  };
+  if (withProgress) {
+    plugin.getUpdateProgress = async () => samples[Math.min(i++, samples.length - 1)];
+  }
+  return plugin;
+}
+
+function armUpdate(app) {
+  app.run('updateState = UPDATE_STATE.outdated; latestVersion = "1.0.9";'
+    + ' latestApkUrl = "https://example.com/DongDongBa-v1.0.9.apk";');
+}
+
+test('一键更新：下载中按百分比更新按钮，并在 25% 档位写一条日志', async () => {
+  const plugin = updatePlugin([
+    { active: true, percent: 10, downloaded: 1 * MB, total: 10 * MB },
+    { active: true, percent: 30, downloaded: 3 * MB, total: 10 * MB },
+    { active: true, percent: 50, downloaded: 5 * MB, total: 10 * MB }
+  ]);
+  const app = createHarness({ localPlugin: plugin });
+  armUpdate(app);
+
+  const pending = app.run('installUpdate()');
+  /* 每次 flush 驱动一轮轮询，依次取走一个进度样本 */
+  await app.flushIntervals();
+  await app.flushIntervals();
+  await app.flushIntervals();
+
+  assert.equal(app.el('updateBtn').textContent, '下载中 50%', '按钮应显示最新百分比');
+  assert.equal(app.el('updateBtn').disabled, true, '下载中按钮应禁用');
+
+  /* 10% 那一轮不跨档位，不写；30% 跨 25%、50% 跨 50%，各写一条 */
+  const milestones = app.logLines.filter((l) => l.includes('已下载 '));
+  assert.equal(milestones.length, 2, '每跨过一个 25% 档位写一条，避免刷屏');
+  assert.ok(milestones[0].includes('已下载 25%') && milestones[0].includes('3.0MB / 10.0MB'),
+    '实际: ' + milestones[0]);
+  assert.ok(milestones[1].includes('已下载 50%') && milestones[1].includes('5.0MB / 10.0MB'),
+    '实际: ' + milestones[1]);
+  assert.ok(milestones.every((l) => l.includes('MB/s')), '应带上速度');
+
+  plugin.__resolve({ success: true, message: '安装包已就绪', size: 10 * MB });
+  await pending;
+});
+
+test('一键更新：服务端未给总长度时退化为显示已下载量', async () => {
+  const plugin = updatePlugin([
+    { active: true, percent: -1, downloaded: 0, total: -1 },
+    { active: true, percent: -1, downloaded: 2.5 * MB, total: -1 }
+  ]);
+  const app = createHarness({ localPlugin: plugin });
+  armUpdate(app);
+
+  const pending = app.run('installUpdate()');
+  await app.flushIntervals();
+  await app.flushIntervals();
+
+  assert.equal(app.el('updateBtn').textContent, '下载中 2.5MB', 'percent 为 -1 时应改报已下载量');
+  assert.ok(!app.logLines.some((l) => l.includes('已下载 ')), '无百分比时不应写档位日志');
+
+  plugin.__resolve({ success: true, message: 'ok', size: 0 });
+  await pending;
+});
+
+test('一键更新：完成后按钮复位、轮询停止', async () => {
+  const plugin = updatePlugin([{ active: true, percent: 50, downloaded: 5, total: 10 }]);
+  const app = createHarness({ localPlugin: plugin });
+  armUpdate(app);
+
+  const pending = app.run('installUpdate()');
+  assert.equal(app.intervalCount(), 1, '应已启动轮询');
+
+  plugin.__resolve({ success: true, message: '安装包已就绪', size: 10 * MB });
+  await pending;
+
+  assert.equal(app.intervalCount(), 0, '完成后应停止轮询，否则会一直空转');
+  assert.equal(app.el('updateBtn').textContent, '立即更新');
+  assert.equal(app.el('updateBtn').disabled, false);
+  assert.ok(app.logLines.some((l) => l.includes('安装包已就绪') && l.includes('10.0MB')));
+});
+
+test('一键更新：插件不支持进度查询时不轮询、不报错', async () => {
+  const plugin = updatePlugin([], { withProgress: false });
+  const app = createHarness({ localPlugin: plugin });
+  armUpdate(app);
+
+  const pending = app.run('installUpdate()');
+
+  assert.equal(app.intervalCount(), 0, '无 getUpdateProgress 时不应启动轮询');
+  assert.equal(app.el('updateBtn').textContent, '下载中…', '应回退到原来的文案');
+
+  plugin.__resolve({ success: true, message: 'ok', size: 0 });
+  await pending;
+
+  assert.equal(app.el('updateBtn').textContent, '立即更新');
+});
+
+test('一键更新：插件抛异常时按钮复位且写明失败原因', async () => {
+  let i = 0;
+  const plugin = {
+    updateSteps: async () => ({ success: true, message: '', log: '' }),
+    getUpdateProgress: async () => { i += 1; return { active: true, percent: 10, downloaded: 1, total: 10 }; },
+    installUpdate: async () => { throw new Error('网络中断'); }
+  };
+  const app = createHarness({ localPlugin: plugin });
+  armUpdate(app);
+
+  await app.run('installUpdate()');
+
+  assert.equal(app.el('updateBtn').textContent, '立即更新');
+  assert.equal(app.el('updateBtn').disabled, false);
+  assert.equal(app.intervalCount(), 0, '异常路径也要停掉轮询');
+  assert.ok(app.logLines.some((l) => l.includes('更新失败') && l.includes('网络中断')));
 });

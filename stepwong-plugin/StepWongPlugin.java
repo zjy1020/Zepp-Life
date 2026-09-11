@@ -63,6 +63,17 @@ public class StepWongPlugin extends Plugin {
      */
     private static final String AUTHORITY_SUFFIX = ".updates";
 
+    /*
+     * 下载进度，供前端轮询 getUpdateProgress 读取。
+     *
+     * 用轮询而不是 Capacitor 的事件监听：少一层监听器的注册/注销生命周期，
+     * 页面切走或插件异常时也不会留下悬挂的监听器。
+     * 必须 volatile —— 写入发生在 executor 线程，读取发生在 WebView 线程。
+     */
+    private static volatile boolean updateDownloading = false;
+    private static volatile long updateDownloaded = 0;
+    private static volatile long updateTotal = 0;
+
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     @PluginMethod
@@ -113,6 +124,24 @@ public class StepWongPlugin extends Plugin {
     }
 
     /**
+     * 供前端轮询下载进度。
+     *
+     * percent 在总长度未知时为 -1（部分 CDN 不回 Content-Length），
+     * 此时前端退化为只显示已下载字节数。
+     */
+    @PluginMethod
+    public void getUpdateProgress(PluginCall call) {
+        long total = updateTotal;
+        long done = updateDownloaded;
+        JSObject result = new JSObject();
+        result.put("active", updateDownloading);
+        result.put("percent", total > 0 ? (int) Math.min(100, done * 100 / total) : -1);
+        result.put("downloaded", done);
+        result.put("total", total);
+        call.resolve(result);
+    }
+
+    /**
      * 下载新版 APK 并拉起系统安装器。
      *
      * Android 不允许普通应用静默安装，只能把安装包交给系统安装界面由用户确认，
@@ -129,6 +158,9 @@ public class StepWongPlugin extends Plugin {
         }
 
         executor.execute(() -> {
+            updateDownloading = true;
+            updateDownloaded = 0;
+            updateTotal = 0;
             try {
                 File dir = new File(getContext().getCacheDir(), "updates");
                 if (!dir.exists() && !dir.mkdirs()) {
@@ -155,11 +187,15 @@ public class StepWongPlugin extends Plugin {
                 long total = 0;
                 try (InputStream in = conn.getInputStream();
                      FileOutputStream out = new FileOutputStream(apk)) {
+                    /* 先把总长度落进状态，前端据此算百分比；拿不到就是 -1 */
+                    updateTotal = conn.getContentLength();
+                    updateDownloaded = 0;
                     byte[] buf = new byte[16384];
                     int n;
                     while ((n = in.read(buf)) > 0) {
                         out.write(buf, 0, n);
                         total += n;
+                        updateDownloaded = total;
                     }
                 }
                 conn.disconnect();
@@ -201,6 +237,9 @@ public class StepWongPlugin extends Plugin {
             } catch (Exception e) {
                 call.resolve(installFailure("更新失败："
                         + e.getClass().getSimpleName() + "：" + e.getMessage()));
+            } finally {
+                /* 无论成败都要清掉进行中标志，否则前端轮询会一直显示「下载中」 */
+                updateDownloading = false;
             }
         });
     }

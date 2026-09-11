@@ -1,7 +1,7 @@
 const WORKER_URL = 'https://stepwong-api.3255962845.workers.dev';
 const STORAGE_KEYS = { accounts: 'stepwong_accounts', history: 'stepwong_history', historyArchive: 'stepwong_history_archive', theme: 'stepwong_theme', tab: 'stepwong_tab', step: 'stepwong_step', lastSuccessStep: 'stepwong_last_success_step', lastResetDate: 'stepwong_last_reset_date', authCache: 'stepwong_auth_cache', lastSubmitAt: 'stepwong_last_submit_at', logs: 'stepwong_logs' };
 /* 当前版本号。升版本时与 Release 的 tag 保持一致，便于在界面里确认装的是哪一版 */
-const APP_VERSION = '1.0.7';
+const APP_VERSION = '1.0.8';
 const RELEASES_API = 'https://api.github.com/repos/zjy1020/Zepp-Life/releases/latest';
 /* 两次提交之间的最小间隔。华米按来源 IP 限流，短窗口内连发多轮即触发 429；
    冷却挡的是误触连点，代价由失败后的无效重试承担。 */
@@ -1182,6 +1182,40 @@ async function checkForUpdate(options = {}) {
 
    注意：Android 不允许普通应用静默安装，下载完只会跳出系统安装界面，
    仍需用户点一次「安装」；Android 8+ 首次还要先授权「安装未知应用」。 */
+/* 轮询下载进度。
+   用轮询而非插件事件监听：少一层监听器生命周期，且下载结束时自然停止。
+   日志只在跨过 25% 档位时写一次，避免刷屏。 */
+function startUpdateProgressPolling(plugin, btn) {
+  let lastMilestone = -1;
+  const startedAt = Date.now();
+  const timer = setInterval(async () => {
+    try {
+      const p = await plugin.getUpdateProgress();
+      if (!p || !p.active) return;
+
+      const secs = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+      if (p.percent >= 0) {
+        if (btn) btn.textContent = '下载中 ' + p.percent + '%';
+        const milestone = Math.floor(p.percent / 25) * 25;
+        if (milestone > lastMilestone && milestone > 0) {
+          lastMilestone = milestone;
+          const speed = p.downloaded / 1048576 / secs;
+          appendLog('line', '   · 已下载 ' + milestone + '%（'
+            + (p.downloaded / 1048576).toFixed(1) + 'MB / '
+            + (p.total / 1048576).toFixed(1) + 'MB，'
+            + speed.toFixed(1) + 'MB/s）');
+        }
+      } else if (p.downloaded > 0) {
+        /* 服务端没给总长度时只报已下载量 */
+        if (btn) btn.textContent = '下载中 ' + (p.downloaded / 1048576).toFixed(1) + 'MB';
+      }
+    } catch {
+      /* 轮询失败不打扰用户：主流程的结果仍由 installUpdate 的返回值决定 */
+    }
+  }, 350);
+  return () => clearInterval(timer);
+}
+
 async function installUpdate() {
   if (updateState !== UPDATE_STATE.outdated || !latestVersion) return;
 
@@ -1198,6 +1232,10 @@ async function installUpdate() {
     try { window.open(latestApkUrl, '_blank'); } catch { /* 弹窗被拦截时忽略 */ }
     return;
   }
+
+  /* 插件不支持进度查询时退化为原来的「下载中…」，不报错 */
+  const canPoll = typeof plugin.getUpdateProgress === 'function';
+  const stopPolling = canPoll ? startUpdateProgressPolling(plugin, btn) : () => {};
 
   if (btn) { btn.disabled = true; btn.textContent = '下载中…'; }
   appendLog('info', '⟳ 正在下载 v' + latestVersion + ' 安装包…');
@@ -1216,6 +1254,7 @@ async function installUpdate() {
   } catch (err) {
     appendLog('error', '✖ 更新失败：' + ((err && err.message) || err));
   } finally {
+    stopPolling();
     if (btn) { btn.disabled = false; btn.textContent = '立即更新'; }
   }
 }
