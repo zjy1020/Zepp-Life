@@ -4,10 +4,18 @@
 在本项目里做三件事，都必须在 build 之前执行：
 
 1. 清单加 `REQUEST_INSTALL_PACKAGES` —— 应用内一键更新要下载并安装 APK
-2. 清单注册 `FileProvider` —— 安装包要通过 content:// URI 交给系统安装器
+2. 清单注册**本插件专用的** FileProvider —— 安装包要通过 content:// URI 交给系统安装器
    （直接传 file:// 在 Android 7+ 会抛 FileUriExposedException）
 3. `build.gradle` 注入固定签名 —— 否则 CI 每次构建都会现场生成新的
    debug.keystore，导致各版本签名不同、无法覆盖安装
+
+关于第 2 点为什么要自带 provider：
+Capacitor 模板**已经**声明了一个 `androidx.core.content.FileProvider`
+（authority `${applicationId}.fileprovider`，资源 `@xml/file_paths`），
+但那个 `file_paths.xml` 的路径取值随版本变化，无法保证覆盖到我们的缓存目录。
+所以这里另起一个 authority `com.zepplife.steps.updates` + 自己的 `ddb_paths.xml`，
+完全自控、可在产物里直接核验，也不与模板已有的 provider 冲突
+（同一份清单里两个 provider 类名相同但 authority 不同，是合法的）。
 
 签名所需的 keystore 与口令通过环境变量传入（GitHub Secrets）：
 KEYSTORE_PATH / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD
@@ -22,9 +30,13 @@ ANDROID = pathlib.Path("android")
 APP = ANDROID / "app"
 MANIFEST = APP / "src/main/AndroidManifest.xml"
 GRADLE = APP / "build.gradle"
-FILE_PATHS = APP / "src/main/res/xml/file_paths.xml"
+PATHS_FILE = APP / "src/main/res/xml/ddb_paths.xml"
 
-FILE_PATHS_XML = """<?xml version="1.0" encoding="utf-8"?>
+# authority 后缀与 plugin 里 getPackageName() + AUTHORITY_SUFFIX 保持一致
+AUTHORITY_SUFFIX = ".updates"
+AUTHORITY_ATTR = f'android:authorities="${{applicationId}}{AUTHORITY_SUFFIX}"'
+
+PATHS_XML = """<?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 与 StepWongPlugin.installUpdate 里 getCacheDir()/updates 对应 -->
     <cache-path name="updates" path="updates/" />
@@ -33,12 +45,12 @@ FILE_PATHS_XML = """<?xml version="1.0" encoding="utf-8"?>
 
 PROVIDER_TEMPLATE = """{inner}<provider
 {inner}    android:name="androidx.core.content.FileProvider"
-{inner}    android:authorities="${{applicationId}}.fileprovider"
+{inner}    android:authorities="${{applicationId}}{suffix}"
 {inner}    android:exported="false"
 {inner}    android:grantUriPermissions="true">
 {inner}    <meta-data
 {inner}        android:name="android.support.FILE_PROVIDER_PATHS"
-{inner}        android:resource="@xml/file_paths" />
+{inner}        android:resource="@xml/ddb_paths" />
 {inner}</provider>
 """
 
@@ -60,24 +72,25 @@ def patch_manifest():
         text = text[:m.start()] + perm + text[m.start():]
         changed.append("REQUEST_INSTALL_PACKAGES")
 
-    if "androidx.core.content.FileProvider" not in text:
+    if AUTHORITY_ATTR not in text:
         m = re.search(r"^([ \t]*)</application>", text, re.M)
         if not m:
             sys.exit("AndroidManifest.xml 里找不到 </application>")
-        provider = PROVIDER_TEMPLATE.format(inner=m.group(1) + "    ")
+        provider = PROVIDER_TEMPLATE.format(inner=m.group(1) + "    ",
+                                            suffix=AUTHORITY_SUFFIX)
         text = text[:m.start()] + provider + text[m.start():]
-        changed.append("FileProvider")
+        changed.append("FileProvider(" + AUTHORITY_SUFFIX + ")")
 
     MANIFEST.write_text(text, encoding="utf-8")
     return changed
 
 
-def write_file_paths():
-    if FILE_PATHS.exists():
-        return False
-    FILE_PATHS.parent.mkdir(parents=True, exist_ok=True)
-    FILE_PATHS.write_text(FILE_PATHS_XML, encoding="utf-8")
-    return True
+def write_paths():
+    if PATHS_FILE.exists():
+        return "已存在，跳过"
+    PATHS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PATHS_FILE.write_text(PATHS_XML, encoding="utf-8")
+    return "已写入"
 
 
 def patch_gradle():
@@ -133,14 +146,23 @@ def main():
 
     print(f"keystore: {keystore} ({keystore.stat().st_size} bytes)")
     print("manifest :", ", ".join(patch_manifest()) or "无需改动")
-    print("file_paths:", "已写入" if write_file_paths() else "已存在，跳过")
+    print("ddb_paths:", write_paths())
     print("gradle   :", patch_gradle())
 
     print("\n--- AndroidManifest.xml 校验 ---")
     mt = MANIFEST.read_text(encoding="utf-8")
-    for kw in ["REQUEST_INSTALL_PACKAGES", "androidx.core.content.FileProvider",
-               "${applicationId}.fileprovider", "@xml/file_paths"]:
+    for kw in ["REQUEST_INSTALL_PACKAGES",
+               f"android:authorities=\"${{applicationId}}{AUTHORITY_SUFFIX}\"",
+               "@xml/ddb_paths"]:
         print(f"  {'OK  ' if kw in mt else 'FAIL'} {kw}")
+
+    print("\n--- provider 声明数量 ---")
+    print("  provider 元素:", mt.count("<provider"))
+
+    print("\n--- ddb_paths.xml 校验 ---")
+    pt = PATHS_FILE.read_text(encoding="utf-8") if PATHS_FILE.exists() else ""
+    for kw in ["<cache-path", 'name="updates"', 'path="updates/"']:
+        print(f"  {'OK  ' if kw in pt else 'FAIL'} {kw}")
 
     print("\n--- build.gradle 签名段 ---")
     for i, line in enumerate(GRADLE.read_text(encoding="utf-8").splitlines(), 1):

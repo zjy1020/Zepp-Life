@@ -55,6 +55,13 @@ public class StepWongPlugin extends Plugin {
     private static final int READ_TIMEOUT_MS = 20000;
     private static final int STEP_MIN = 1;
     private static final int STEP_MAX = 98800;
+    /*
+     * FileProvider 的 authority 后缀，必须与 scripts/patch_android.py 里注入的
+     * android:authorities="${applicationId}.updates" 完全一致。
+     * 用独立 authority 而非 Capacitor 模板自带的 .fileprovider——
+     * 模板那份的 file_paths.xml 不保证覆盖到本插件的缓存目录。
+     */
+    private static final String AUTHORITY_SUFFIX = ".updates";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -176,7 +183,7 @@ public class StepWongPlugin extends Plugin {
 
                 Uri uri = FileProvider.getUriForFile(
                     getContext(),
-                    getContext().getPackageName() + ".fileprovider",
+                    getContext().getPackageName() + AUTHORITY_SUFFIX,
                     apk
                 );
                 Intent intent = new Intent(Intent.ACTION_VIEW);
